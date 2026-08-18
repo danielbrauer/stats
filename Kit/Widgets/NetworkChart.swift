@@ -265,6 +265,13 @@ public class NetworkChart: WidgetWrapper {
         let bottomBase: CGFloat = invertedState ? outerBottom : innerBottom
         let halfHeight: CGFloat = min(outerTop - innerTop, innerBottom - outerBottom)
         
+        // a base is the centre of a 1px stroke, so it sits half a pixel inside
+        // the row the line occupies. The area under the line is closed on the
+        // far edge of that row instead, or it would stop in the middle of it
+        // and leave the chart with a soft edge where the line has a sharp one
+        let topFillBase: CGFloat = invertedState ? chartFrame.maxY : middle
+        let bottomFillBase: CGFloat = invertedState ? chartFrame.minY : middle
+        
         let columnXPoint = { (point: Int) -> CGFloat in
             return chartFrame.minX + (CGFloat(point) * xRatio)
         }
@@ -305,8 +312,8 @@ public class NetworkChart: WidgetWrapper {
         context.saveGState()
         
         guard let topUnderLinePath = topLinePath.copy() as? NSBezierPath else { return }
-        topUnderLinePath.line(to: CGPoint(x: columnXPoint(points.count - 1), y: topBase))
-        topUnderLinePath.line(to: CGPoint(x: columnXPoint(0), y: topBase))
+        topUnderLinePath.line(to: CGPoint(x: columnXPoint(points.count - 1), y: topFillBase))
+        topUnderLinePath.line(to: CGPoint(x: columnXPoint(0), y: topFillBase))
         topUnderLinePath.close()
         topUnderLinePath.addClip()
         bottomColor?.withAlphaComponent(0.5).setFill()
@@ -317,8 +324,8 @@ public class NetworkChart: WidgetWrapper {
         context.saveGState()
         
         guard let bottomUnderLinePath = bottomLinePath.copy() as? NSBezierPath else { return }
-        bottomUnderLinePath.line(to: CGPoint(x: columnXPoint(points.count - 1), y: bottomBase))
-        bottomUnderLinePath.line(to: CGPoint(x: columnXPoint(0), y: bottomBase))
+        bottomUnderLinePath.line(to: CGPoint(x: columnXPoint(points.count - 1), y: bottomFillBase))
+        bottomUnderLinePath.line(to: CGPoint(x: columnXPoint(0), y: bottomFillBase))
         bottomUnderLinePath.close()
         bottomUnderLinePath.addClip()
         topColor?.withAlphaComponent(0.5).setFill()
