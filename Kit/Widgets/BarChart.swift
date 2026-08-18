@@ -84,7 +84,7 @@ public class BarChart: WidgetWrapper {
             }
             self.setFrameSize(NSSize(width: 36, height: self.frame.size.height))
             self.invalidateIntrinsicContentSize()
-            self.display()
+            self.needsDisplay = true
         }
         
         let style = NSMutableParagraphStyle()
@@ -109,7 +109,7 @@ public class BarChart: WidgetWrapper {
     public override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         self.labelImage = rasterizedText(self.NSLabelString, appearance: self.effectiveAppearance)
-        self.display()
+        self.needsDisplay = true
     }
     
     public override func draw(_ dirtyRect: NSRect) {

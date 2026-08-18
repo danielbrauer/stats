@@ -175,6 +175,7 @@ open class WidgetWrapper: NSView, widget_p {
     required public init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
     
     public func setWidth(_ width: CGFloat) {
         var newWidth = width
@@ -213,9 +214,13 @@ open class WidgetWrapper: NSView, widget_p {
         return width
     }
     
+    // Invalidate rather than draw immediately. display() paints straight over
+    // whatever the widget drew last, because the erase belongs to the window's
+    // update pass, so a widget that changes shape leaves the old shape behind.
+    // Invalidating also coalesces: several changes in one pass draw once.
     public func redraw() {
         DispatchQueue.main.async { [weak self] in
-            self?.display()
+            self?.needsDisplay = true
         }
     }
     

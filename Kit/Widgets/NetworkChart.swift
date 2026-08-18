@@ -127,7 +127,7 @@ public class NetworkChart: WidgetWrapper {
     public override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         self.labelImage = rasterizedText(self.NSLabelString, appearance: self.effectiveAppearance)
-        self.display()
+        self.needsDisplay = true
     }
     
     public override func draw(_ dirtyRect: NSRect) {
@@ -334,7 +334,7 @@ public class NetworkChart: WidgetWrapper {
         }
         DispatchQueue.main.async(execute: {
             if self.window?.isVisible ?? false {
-                self.display()
+                self.needsDisplay = true
             }
         })
     }
@@ -430,7 +430,7 @@ public class NetworkChart: WidgetWrapper {
         let state = controlState(sender)
         self.queue.sync { self.invertedState = state }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_inverted", value: state)
-        self.display()
+        self.needsDisplay = true
     }
     
     @objc private func toggleFixedScale(_ sender: NSControl) {
@@ -438,33 +438,33 @@ public class NetworkChart: WidgetWrapper {
         self.queue.sync { self.fixedScaleState = state }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_fixedScale", value: state)
         self.limitsSection?.isHidden = !state
-        self.display()
+        self.needsDisplay = true
     }
     
     private func changeUploadLimit(_ newValue: Int) {
         self.queue.sync { self.uploadLimit = newValue }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_uploadLimit", value: newValue)
-        self.display()
+        self.needsDisplay = true
     }
     
     private func toggleUploadLimitUnit(_ newValue: KeyValue_p) {
         guard let unit = newValue as? SizeUnit else { return }
         self.queue.sync { self.uploadLimitUnit = unit }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_uploadLimitUnit", value: unit.key)
-        self.display()
+        self.needsDisplay = true
     }
     
     private func changeDownloadLimit(_ newValue: Int) {
         self.queue.sync { self.downloadLimit = newValue }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_downloadLimit", value: newValue)
-        self.display()
+        self.needsDisplay = true
     }
     
     private func toggleDownloadLimitUnit(_ newValue: KeyValue_p) {
         guard let unit = newValue as? SizeUnit else { return }
         self.queue.sync { self.downloadLimitUnit = unit }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_downloadLimitUnit", value: unit.key)
-        self.display()
+        self.needsDisplay = true
     }
     
     @objc private func toggleLabel(_ sender: NSControl) {
@@ -473,7 +473,7 @@ public class NetworkChart: WidgetWrapper {
             self.labelState = state
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_label", value: self.labelState)
-        self.display()
+        self.needsDisplay = true
     }
     
     @objc private func toggleBox(_ sender: NSControl) {
@@ -491,7 +491,7 @@ public class NetworkChart: WidgetWrapper {
             Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_frame", value: self.frameState)
         }
         
-        self.display()
+        self.needsDisplay = true
     }
     
     @objc private func toggleFrame(_ sender: NSControl) {
@@ -509,7 +509,7 @@ public class NetworkChart: WidgetWrapper {
             Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_box", value: self.boxState)
         }
         
-        self.display()
+        self.needsDisplay = true
     }
     
     @objc private func toggleHistoryCount(_ sender: NSSlider) {
@@ -531,7 +531,7 @@ public class NetworkChart: WidgetWrapper {
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_historyCount", value: self.historyCount)
         
-        self.display()
+        self.needsDisplay = true
     }
     
     @objc private func toggleDownloadColor(_ sender: NSMenuItem) {
@@ -540,7 +540,7 @@ public class NetworkChart: WidgetWrapper {
             self.downloadColor = SColor.fromString(key, defaultValue: self.downloadColor)
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_downloadColor", value: self.downloadColor.key)
-        self.display()
+        self.needsDisplay = true
     }
     
     @objc private func toggleUploadColor(_ sender: NSMenuItem) {
@@ -549,7 +549,7 @@ public class NetworkChart: WidgetWrapper {
             self.uploadColor = SColor.fromString(key, defaultValue: self.uploadColor)
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_uploadColor", value: self.uploadColor.key)
-        self.display()
+        self.needsDisplay = true
     }
     
     @objc private func toggleScale(_ sender: NSMenuItem) {
@@ -559,7 +559,7 @@ public class NetworkChart: WidgetWrapper {
             self.scaleState = value
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_scale", value: key)
-        self.display()
+        self.needsDisplay = true
     }
     
     @objc private func toggleReverseOrder(_ sender: NSControl) {
@@ -568,6 +568,6 @@ public class NetworkChart: WidgetWrapper {
             self.reverseOrderState = state
         }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_reverseOrder", value: self.reverseOrderState)
-        self.display()
+        self.needsDisplay = true
     }
 }
