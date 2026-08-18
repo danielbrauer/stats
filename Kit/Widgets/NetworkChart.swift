@@ -20,6 +20,15 @@ public class NetworkChart: WidgetWrapper {
     private var uploadColor: SColor = .secondRed
     private var scaleState: Scale = .linear
     private var reverseOrderState: Bool = false
+    private var fixedScaleState: Bool = false
+    private var uploadLimit: Int = 10
+    private var uploadLimitUnit: SizeUnit = .MB
+    private var downloadLimit: Int = 10
+    private var downloadLimitUnit: SizeUnit = .MB
+    
+    private var uploadLimitBytes: Double { Double(self.uploadLimitUnit.toBytes(self.uploadLimit)) }
+    private var downloadLimitBytes: Double { Double(self.downloadLimitUnit.toBytes(self.downloadLimit)) }
+    private var limitsSection: PreferencesSection? = nil
     
     private var points: [(Double, Double)] = Array(repeating: (0, 0), count: 60)
     
@@ -76,6 +85,11 @@ public class NetworkChart: WidgetWrapper {
                 Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_scale", value: self.scaleState.key)
             }
             self.reverseOrderState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_reverseOrder", defaultValue: self.reverseOrderState)
+            self.fixedScaleState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_fixedScale", defaultValue: self.fixedScaleState)
+            self.uploadLimit = Store.shared.int(key: "\(self.title)_\(self.type.rawValue)_uploadLimit", defaultValue: self.uploadLimit)
+            self.uploadLimitUnit = SizeUnit.fromString(Store.shared.string(key: "\(self.title)_\(self.type.rawValue)_uploadLimitUnit", defaultValue: self.uploadLimitUnit.key), defaultValue: .MB)
+            self.downloadLimit = Store.shared.int(key: "\(self.title)_\(self.type.rawValue)_downloadLimit", defaultValue: self.downloadLimit)
+            self.downloadLimitUnit = SizeUnit.fromString(Store.shared.string(key: "\(self.title)_\(self.type.rawValue)_downloadLimitUnit", defaultValue: self.downloadLimitUnit.key), defaultValue: .MB)
         }
         
         self.points = Array(repeating: (0, 0), count: self.historyCount)
@@ -117,6 +131,9 @@ public class NetworkChart: WidgetWrapper {
         var frameState: Bool = false
         var scaleState: Scale = .linear
         var reverseOrderState: Bool = false
+        var fixedScaleState: Bool = false
+        var uploadLimitBytes: Double = 0
+        var downloadLimitBytes: Double = 0
         var originWidth: CGFloat = 0
         var labelString: [NSAttributedString] = []
         var downloadColor: SColor = .secondBlue
@@ -127,6 +144,9 @@ public class NetworkChart: WidgetWrapper {
             boxState = self.boxState
             frameState = self.frameState
             scaleState = self.scaleState
+            fixedScaleState = self.fixedScaleState
+            uploadLimitBytes = self.uploadLimitBytes
+            downloadLimitBytes = self.downloadLimitBytes
             reverseOrderState = self.reverseOrderState
             labelString = self.NSLabelCharts
             originWidth = self.width
@@ -179,12 +199,22 @@ public class NetworkChart: WidgetWrapper {
             width: originWidth - (inset*2),
             height: boxSize.height - (inset*2)
         )
-        var topMax: Double = (reverseOrderState ? points.map{ $0.1 }.max() : points.map{ $0.0 }.max()) ?? 0
-        var bottomMax: Double = (reverseOrderState ? points.map{ $0.0 }.max() : points.map{ $0.1 }.max()) ?? 0
-        if topMax == 0 {
+        // a fixed ceiling makes the chart readable at a glance: without it the
+        // scale is whatever the tallest sample in the window happens to be, so
+        // the same height means a different speed from one moment to the next
+        var topMax: Double
+        var bottomMax: Double
+        if fixedScaleState {
+            topMax = reverseOrderState ? downloadLimitBytes : uploadLimitBytes
+            bottomMax = reverseOrderState ? uploadLimitBytes : downloadLimitBytes
+        } else {
+            topMax = (reverseOrderState ? points.map{ $0.1 }.max() : points.map{ $0.0 }.max()) ?? 0
+            bottomMax = (reverseOrderState ? points.map{ $0.0 }.max() : points.map{ $0.1 }.max()) ?? 0
+        }
+        if topMax <= 0 {
             topMax = 1
         }
-        if bottomMax == 0 {
+        if bottomMax <= 0 {
             bottomMax = 1
         }
         
@@ -207,11 +237,11 @@ public class NetworkChart: WidgetWrapper {
         }
         
         let topYPoint = { (point: Int) -> CGFloat in
-            let value = reverseOrderState ? points[point].1 : points[point].0
+            let value = min(reverseOrderState ? points[point].1 : points[point].0, topMax)
             return centre + scaleValue(scale: scaleState, value: value, maxValue: topMax, zeroValue: 256.0, maxHeight: topHeight, limit: 1)
         }
         let bottomYPoint = { (point: Int) -> CGFloat in
-            let value = reverseOrderState ? points[point].0 : points[point].1
+            let value = min(reverseOrderState ? points[point].0 : points[point].1, bottomMax)
             return centre - scaleValue(scale: scaleState, value: value, maxValue: bottomMax, zeroValue: 256.0, maxHeight: bottomHeight, limit: 1)
         }
         
@@ -334,10 +364,70 @@ public class NetworkChart: WidgetWrapper {
                 action: #selector(self.toggleScale),
                 items: [Scale.linear, Scale.square, Scale.cube, Scale.logarithmic],
                 selected: self.scaleState.key
+            )),
+            PreferencesRow(localizedString("Fixed scale"), component: switchView(
+                action: #selector(self.toggleFixedScale),
+                state: self.fixedScaleState
             ))
         ]))
         
+        let limits = PreferencesSection([
+            PreferencesRow(localizedString("Upload limit"), component: StepperInput(
+                self.uploadLimit,
+                range: NSRange(location: 1, length: 999),
+                unit: self.uploadLimitUnit.key,
+                units: SizeUnit.allCases,
+                callback: self.changeUploadLimit,
+                unitCallback: self.toggleUploadLimitUnit
+            )),
+            PreferencesRow(localizedString("Download limit"), component: StepperInput(
+                self.downloadLimit,
+                range: NSRange(location: 1, length: 999),
+                unit: self.downloadLimitUnit.key,
+                units: SizeUnit.allCases,
+                callback: self.changeDownloadLimit,
+                unitCallback: self.toggleDownloadLimitUnit
+            ))
+        ])
+        limits.isHidden = !self.fixedScaleState
+        self.limitsSection = limits
+        view.addArrangedSubview(limits)
+        
         return view
+    }
+    
+    @objc private func toggleFixedScale(_ sender: NSControl) {
+        let state = controlState(sender)
+        self.queue.sync { self.fixedScaleState = state }
+        Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_fixedScale", value: state)
+        self.limitsSection?.isHidden = !state
+        self.display()
+    }
+    
+    private func changeUploadLimit(_ newValue: Int) {
+        self.queue.sync { self.uploadLimit = newValue }
+        Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_uploadLimit", value: newValue)
+        self.display()
+    }
+    
+    private func toggleUploadLimitUnit(_ newValue: KeyValue_p) {
+        guard let unit = newValue as? SizeUnit else { return }
+        self.queue.sync { self.uploadLimitUnit = unit }
+        Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_uploadLimitUnit", value: unit.key)
+        self.display()
+    }
+    
+    private func changeDownloadLimit(_ newValue: Int) {
+        self.queue.sync { self.downloadLimit = newValue }
+        Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_downloadLimit", value: newValue)
+        self.display()
+    }
+    
+    private func toggleDownloadLimitUnit(_ newValue: KeyValue_p) {
+        guard let unit = newValue as? SizeUnit else { return }
+        self.queue.sync { self.downloadLimitUnit = unit }
+        Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_downloadLimitUnit", value: unit.key)
+        self.display()
     }
     
     @objc private func toggleLabel(_ sender: NSControl) {
