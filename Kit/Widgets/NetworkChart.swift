@@ -245,18 +245,22 @@ public class NetworkChart: WidgetWrapper {
         // between the two middle rows, which would split it over both.
         let half: CGFloat = lineWidth/2
         let rows: CGFloat = (chartFrame.height/lineWidth).rounded(.down)
-        let centre: CGFloat = chartFrame.minY + ((rows/2).rounded(.down) * lineWidth) + half
+        
+        // the middle is the boundary between two rows and each half takes the
+        // row on its own side of it. Sharing one row put both lines on the same
+        // pixel whenever the traffic was small, and the one drawn second hid
+        // the other. Splitting them also makes the two reaches equal.
+        let middle: CGFloat = chartFrame.minY + ((rows/2).rounded(.down) * lineWidth)
+        let innerTop: CGFloat = middle + half
+        let innerBottom: CGFloat = middle - half
         let outerTop: CGFloat = chartFrame.maxY - half
         let outerBottom: CGFloat = chartFrame.minY + half
         
-        // normally both halves grow away from the centre line; inverted, they
-        // hang from the outer edges and the ceiling is the centre line instead
-        let topBase: CGFloat = invertedState ? outerTop : centre
-        let bottomBase: CGFloat = invertedState ? outerBottom : centre
-        // both halves reach the same distance, so equal speeds draw equal
-        // lengths. The centre line cannot sit exactly halfway when the chart is
-        // an even number of pixels tall, so the shorter of the two sides wins
-        let halfHeight: CGFloat = min(outerTop - centre, centre - outerBottom)
+        // normally both halves grow away from the middle; inverted, they hang
+        // from the outer edges and the ceiling is the middle instead
+        let topBase: CGFloat = invertedState ? outerTop : innerTop
+        let bottomBase: CGFloat = invertedState ? outerBottom : innerBottom
+        let halfHeight: CGFloat = min(outerTop - innerTop, innerBottom - outerBottom)
         
         let columnXPoint = { (point: Int) -> CGFloat in
             return chartFrame.minX + (CGFloat(point) * xRatio)
