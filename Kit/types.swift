@@ -301,6 +301,7 @@ public extension Notification.Name {
     static let popupVisibilityChanged = Notification.Name("popupVisibilityChanged")
     static let toggleWidget = Notification.Name("toggleWidget")
     static let togglePreview = Notification.Name("togglePreview")
+    static let toggleModuleTab = Notification.Name("toggleModuleTab")
     static let openModuleSettings = Notification.Name("openModuleSettings")
     static let clickInSettings = Notification.Name("clickInSettings")
     static let refreshPublicIP = Notification.Name("refreshPublicIP")

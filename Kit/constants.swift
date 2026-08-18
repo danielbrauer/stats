@@ -29,6 +29,12 @@ public struct Settings_c_s {
     
     // the preview/settings choice belongs to the settings window, not to a
     // module, so switching modules keeps showing the same kind of view
+    // which tab the module pages are showing, shared the same way. Stored by
+    // name rather than index: not every module offers every tab
+    public var moduleTab: String {
+        get { Store.shared.string(key: "settings_moduleTab", defaultValue: "Module") }
+        nonmutating set { Store.shared.set(key: "settings_moduleTab", value: newValue) }
+    }
     public var showModuleSettings: Bool {
         get { Store.shared.bool(key: "settings_showModuleSettings", defaultValue: false) }
         nonmutating set { Store.shared.set(key: "settings_showModuleSettings", value: newValue) }

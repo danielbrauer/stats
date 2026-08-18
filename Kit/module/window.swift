@@ -39,6 +39,7 @@ open class Window: NSStackView {
     
     private var widgetSelector: NSView?
     private var segmentedControl: NSSegmentedControl?
+    private var tabKeys: [String] = []
     private var tabView: NSTabView?
     
     private var modulePreview: PreviewWrapper?
@@ -112,15 +113,22 @@ open class Window: NSStackView {
         
         NotificationCenter.default.addObserver(self, selector: #selector(listenForOneView), name: .toggleOneView, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(listenForToggleView), name: .togglePreview, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(listenForTabChange), name: .toggleModuleTab, object: nil)
         
         self.segmentedControl?.widthAnchor.constraint(equalTo: self.widthAnchor, constant: -(Constants.Settings.margin*2)).isActive = true
         self.widgetSelector?.widthAnchor.constraint(equalTo: self.widthAnchor, constant: -(Constants.Settings.margin*2)).isActive = true
         self.moduleSettings?.widthAnchor.constraint(equalTo: self.widthAnchor, constant: -(Constants.Settings.margin*2)).isActive = true
+        
+        // only once the constraints above are active: selecting a tab takes the
+        // other tabs' views out of the hierarchy, and a constraint tied to one
+        // of them then has no common ancestor to be activated against
+        self.selectTab(Constants.Settings.moduleTab)
     }
     
     deinit {
         NotificationCenter.default.removeObserver(self, name: .toggleOneView, object: nil)
         NotificationCenter.default.removeObserver(self, name: .togglePreview, object: nil)
+        NotificationCenter.default.removeObserver(self, name: .toggleModuleTab, object: nil)
     }
     
     required public init?(coder: NSCoder) {
@@ -175,11 +183,15 @@ open class Window: NSStackView {
             localizedString("Module"),
             localizedString("Widgets")
         ]
+        // the labels are translated, so the shared value is keyed on these
+        self.tabKeys = ["Module", "Widgets"]
         if self.isPopupSettingsAvailable {
             labels.append(localizedString("Popup"))
+            self.tabKeys.append("Popup")
         }
         if self.isNotificationsSettingsAvailable {
             labels.append(localizedString("Notifications"))
+            self.tabKeys.append("Notifications")
         }
         
         let segmentedControl = NSSegmentedControl(labels: labels, trackingMode: .selectOne, target: self, action: #selector(self.switchTabs))
@@ -320,6 +332,23 @@ open class Window: NSStackView {
     
     @objc func switchTabs(sender: NSSegmentedControl) {
         self.tabView?.selectTabViewItem(at: sender.selectedSegment)
+        
+        guard self.tabKeys.indices.contains(sender.selectedSegment) else { return }
+        let tab = self.tabKeys[sender.selectedSegment]
+        Constants.Settings.moduleTab = tab
+        NotificationCenter.default.post(name: .toggleModuleTab, object: nil, userInfo: ["tab": tab])
+    }
+    
+    @objc private func listenForTabChange(_ notification: Notification) {
+        guard let tab = notification.userInfo?["tab"] as? String else { return }
+        self.selectTab(tab)
+    }
+    
+    // a module that does not offer the shared tab stays on the one it has
+    private func selectTab(_ tab: String) {
+        guard let index = self.tabKeys.firstIndex(of: tab) else { return }
+        self.segmentedControl?.selectedSegment = index
+        self.tabView?.selectTabViewItem(at: index)
     }
     
     @objc private func toggleOneView(_ sender: NSControl) {
