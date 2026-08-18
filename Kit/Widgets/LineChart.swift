@@ -31,28 +31,10 @@ public class LineChart: WidgetWrapper {
     private var _value: Double = 0
     private var _pressureLevel: RAMPressure = .normal
     
-    private var historyNumbers: [KeyValue_p] = [
-        KeyValue_t(key: "30", value: "30"),
-        KeyValue_t(key: "60", value: "60"),
-        KeyValue_t(key: "90", value: "90"),
-        KeyValue_t(key: "120", value: "120")
-    ]
     private var width: CGFloat {
-        get {
-            switch self.historyCount {
-            case 30:
-                return 24
-            case 60:
-                return 32
-            case 90:
-                return 42
-            case 120:
-                return 52
-            default:
-                return 32
-            }
-        }
+        get { Constants.Widget.chartWidth(self.historyCount) }
     }
+    private var historySliderView: NSView? = nil
     
     private var boxSettingsView: NSSwitch? = nil
     private var frameSettingsView: NSSwitch? = nil
@@ -100,7 +82,10 @@ public class LineChart: WidgetWrapper {
             self.labelState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_label", defaultValue: self.labelState)
             self.valueColorState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_valueColor", defaultValue: self.valueColorState)
             self.colorState = SColor.fromString(Store.shared.string(key: "\(self.title)_\(self.type.rawValue)_color", defaultValue: self.colorState.key))
-            self.historyCount = Store.shared.int(key: "\(self.title)_\(self.type.rawValue)_historyCount", defaultValue: self.historyCount)
+            self.historyCount = min(Constants.Widget.maxHistoryCount, max(
+                Constants.Widget.minHistoryCount,
+                Store.shared.int(key: "\(self.title)_\(self.type.rawValue)_historyCount", defaultValue: self.historyCount)
+            ))
             self.scaleState = Scale.fromString(Store.shared.string(key: "\(self.title)_\(self.type.rawValue)_scale", defaultValue: self.scaleState.key))
             
             self.chart.setScale(self.scaleState)
@@ -285,6 +270,15 @@ public class LineChart: WidgetWrapper {
         )
         self.frameSettingsView = frame
         
+        let historySlider = sliderView(
+            action: #selector(self.toggleHistoryCount),
+            value: self.historyCount,
+            initialValue: "\(self.historyCount)",
+            min: Double(Constants.Widget.minHistoryCount),
+            max: Double(Constants.Widget.maxHistoryCount)
+        )
+        self.historySliderView = historySlider
+        
         view.addArrangedSubview(PreferencesSection([
             PreferencesRow(localizedString("Label"), component: switchView(
                 action: #selector(self.toggleLabel),
@@ -305,11 +299,7 @@ public class LineChart: WidgetWrapper {
                 action: #selector(self.toggleValueColor),
                 state: self.valueColorState
             )),
-            PreferencesRow(localizedString("Number of reads in the chart"), component: selectView(
-                action: #selector(self.toggleHistoryCount),
-                items: self.historyNumbers,
-                selected: "\(self.historyCount)"
-            )),
+            PreferencesRow(localizedString("Number of reads in the chart"), component: historySlider),
             PreferencesRow(localizedString("Scaling"), component: selectView(
                 action: #selector(self.toggleScale),
                 items: Scale.allCases.filter({ $0 != .fixed }),
@@ -371,8 +361,14 @@ public class LineChart: WidgetWrapper {
         self.display()
     }
     
-    @objc private func toggleHistoryCount(_ sender: NSMenuItem) {
-        guard let key = sender.representedObject as? String, let value = Int(key) else { return }
+    @objc private func toggleHistoryCount(_ sender: NSSlider) {
+        let value = Int(sender.doubleValue)
+        guard value != self.historyCount else { return }
+        
+        if let field = self.historySliderView?.subviews.first(where: { $0 is NSTextField }) as? NSTextField {
+            field.stringValue = "\(value)"
+        }
+        
         self.historyCount = value
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_historyCount", value: value)
         self.chart.reinit(value)

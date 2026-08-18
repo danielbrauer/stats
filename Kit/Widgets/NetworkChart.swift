@@ -24,28 +24,10 @@ public class NetworkChart: WidgetWrapper {
     private var points: [(Double, Double)] = Array(repeating: (0, 0), count: 60)
     
     private var width: CGFloat {
-        get {
-            switch self.historyCount {
-            case 30:
-                return 22
-            case 60:
-                return 30
-            case 90:
-                return 40
-            case 120:
-                return 50
-            default:
-                return 30
-            }
-        }
+        get { Constants.Widget.chartWidth(self.historyCount) }
     }
+    private var historySliderView: NSView? = nil
     
-    private var historyNumbers: [KeyValue_p] = [
-        KeyValue_t(key: "30", value: "30"),
-        KeyValue_t(key: "60", value: "60"),
-        KeyValue_t(key: "90", value: "90"),
-        KeyValue_t(key: "120", value: "120")
-    ]
     private var colors: [SColor] = SColor.allCases
     
     private var boxSettingsView: NSSwitch? = nil
@@ -77,7 +59,10 @@ public class NetworkChart: WidgetWrapper {
             self.boxState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_box", defaultValue: self.boxState)
             self.frameState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_frame", defaultValue: self.frameState)
             self.labelState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_label", defaultValue: self.labelState)
-            self.historyCount = Store.shared.int(key: "\(self.title)_\(self.type.rawValue)_historyCount", defaultValue: self.historyCount)
+            self.historyCount = min(Constants.Widget.maxHistoryCount, max(
+                Constants.Widget.minHistoryCount,
+                Store.shared.int(key: "\(self.title)_\(self.type.rawValue)_historyCount", defaultValue: self.historyCount)
+            ))
             self.downloadColor = SColor.fromString(Store.shared.string(key: "\(self.title)_\(self.type.rawValue)_downloadColor", defaultValue: self.downloadColor.key))
             self.uploadColor = SColor.fromString(Store.shared.string(key: "\(self.title)_\(self.type.rawValue)_uploadColor", defaultValue: self.uploadColor.key))
             self.scaleState = Scale.fromString(Store.shared.string(key: "\(self.title)_\(self.type.rawValue)_scale", defaultValue: self.scaleState.key))
@@ -290,6 +275,15 @@ public class NetworkChart: WidgetWrapper {
         )
         self.frameSettingsView = frame
         
+        let historySlider = sliderView(
+            action: #selector(self.toggleHistoryCount),
+            value: self.historyCount,
+            initialValue: "\(self.historyCount)",
+            min: Double(Constants.Widget.minHistoryCount),
+            max: Double(Constants.Widget.maxHistoryCount)
+        )
+        self.historySliderView = historySlider
+        
         view.addArrangedSubview(PreferencesSection([
             PreferencesRow(localizedString("Label"), component: switchView(
                 action: #selector(self.toggleLabel),
@@ -311,11 +305,7 @@ public class NetworkChart: WidgetWrapper {
                 items: self.colors,
                 selected: self.uploadColor.key
             )),
-            PreferencesRow(localizedString("Number of reads in the chart"), component: selectView(
-                action: #selector(self.toggleHistoryCount),
-                items: self.historyNumbers,
-                selected: "\(self.historyCount)"
-            )),
+            PreferencesRow(localizedString("Number of reads in the chart"), component: historySlider),
             PreferencesRow(localizedString("Scaling"), component: selectView(
                 action: #selector(self.toggleScale),
                 items: Scale.allCases.filter({ $0 != .fixed }),
@@ -371,8 +361,14 @@ public class NetworkChart: WidgetWrapper {
         self.display()
     }
     
-    @objc private func toggleHistoryCount(_ sender: NSMenuItem) {
-        guard let key = sender.representedObject as? String, let num = Int(key) else { return }
+    @objc private func toggleHistoryCount(_ sender: NSSlider) {
+        let num = Int(sender.doubleValue)
+        guard num != self.historyCount else { return }
+        
+        if let field = self.historySliderView?.subviews.first(where: { $0 is NSTextField }) as? NSTextField {
+            field.stringValue = "\(num)"
+        }
+        
         self.queue.sync {
             self.historyCount = num
 

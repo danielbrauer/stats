@@ -40,6 +40,15 @@ public struct Widget_c_s {
         get { CGPoint(x: 0, y: 2) }
     }
     public let spacing: CGFloat = 2
+    
+    // the chart width grows with the number of reads, so every read keeps the
+    // same horizontal space instead of being squeezed as the history gets longer
+    public let minHistoryCount: Int = 10
+    public let maxHistoryCount: Int = 120
+    public let historyReadWidth: CGFloat = 0.5
+    public func chartWidth(_ historyCount: Int) -> CGFloat {
+        CGFloat(min(self.maxHistoryCount, max(self.minHistoryCount, historyCount))) * self.historyReadWidth
+    }
 }
 
 public struct Constants {
