@@ -897,6 +897,43 @@ public class ColorView: NSView {
     }
 }
 
+// Text drawn under a rotated transform loses its grid fitting: the hinted stems
+// land at arbitrary sub-pixel positions and small type comes out soft. Rasterise
+// it upright at the backing scale instead. A quarter turn of the resulting
+// bitmap is a pure pixel permutation, so the glyphs survive exactly as hinted.
+public func rasterizedText(_ string: NSAttributedString, appearance: NSAppearance) -> NSImage? {
+    let px: CGFloat = 1 / (NSScreen.main?.backingScaleFactor ?? 1)
+    let size = string.size()
+    let width: CGFloat = (size.width / px).rounded(.up) * px
+    let height: CGFloat = (size.height / px).rounded(.up) * px
+    guard width > 0, height > 0 else { return nil }
+    
+    guard let rep = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: Int((width / px).rounded()),
+        pixelsHigh: Int((height / px).rounded()),
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+    ) else { return nil }
+    rep.size = NSSize(width: width, height: height)
+    
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    appearance.performAsCurrentDrawingAppearance {
+        string.draw(at: .zero)
+    }
+    NSGraphicsContext.restoreGraphicsState()
+    
+    let image = NSImage(size: NSSize(width: width, height: height))
+    image.addRepresentation(rep)
+    return image
+}
+
 public func localizedString(_ key: String, _ params: String..., comment: String = "") -> String {
     var string = NSLocalizedString(key, comment: comment)
     if !params.isEmpty {

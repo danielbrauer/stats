@@ -46,7 +46,8 @@ public class NetworkChart: WidgetWrapper {
     private var boxSettingsView: NSSwitch? = nil
     private var frameSettingsView: NSSwitch? = nil
     
-    public var NSLabelCharts: [NSAttributedString] = []
+    public var NSLabelString: NSAttributedString = NSAttributedString()
+    private var labelImage: NSImage? = nil
     
     public init(title: String, config: NSDictionary?, preview: Bool = false) {
         var widgetTitle: String = title
@@ -112,14 +113,21 @@ public class NetworkChart: WidgetWrapper {
             NSAttributedString.Key.paragraphStyle: style
         ]
         
-        for char in String(self.title.prefix(3)).uppercased().reversed() {
-            let str = NSAttributedString.init(string: "\(char)", attributes: stringAttributes)
-            self.NSLabelCharts.append(str)
-        }
+        self.NSLabelString = NSAttributedString(
+            string: String(self.title.prefix(3)).uppercased(),
+            attributes: stringAttributes
+        )
+        self.labelImage = rasterizedText(self.NSLabelString, appearance: self.effectiveAppearance)
     }
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+    
+    public override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        self.labelImage = rasterizedText(self.NSLabelString, appearance: self.effectiveAppearance)
+        self.display()
     }
     
     public override func draw(_ dirtyRect: NSRect) {
@@ -138,7 +146,7 @@ public class NetworkChart: WidgetWrapper {
         var uploadLimitBytes: Double = 0
         var downloadLimitBytes: Double = 0
         var originWidth: CGFloat = 0
-        var labelString: [NSAttributedString] = []
+        var labelImage: NSImage? = nil
         var downloadColor: SColor = .secondBlue
         var uploadColor: SColor = .secondRed
         self.queue.sync {
@@ -152,7 +160,7 @@ public class NetworkChart: WidgetWrapper {
             uploadLimitBytes = self.uploadLimitBytes
             downloadLimitBytes = self.downloadLimitBytes
             reverseOrderState = self.reverseOrderState
-            labelString = self.NSLabelCharts
+            labelImage = self.labelImage
             originWidth = self.width
             downloadColor = self.downloadColor
             uploadColor = self.uploadColor
@@ -164,16 +172,21 @@ public class NetworkChart: WidgetWrapper {
         var x: CGFloat = 0
         var width = originWidth + (Constants.Widget.margin.x*2)
         
-        if labelState {
-            let letterHeight = self.frame.height / 3
-            let letterWidth: CGFloat = 6.0
+        if labelState, let labelImage = labelImage {
+            // a pre-rasterised string turned a quarter turn left: it reads bottom
+            // to top and keeps the grid fitting that rotated text throws away.
+            // Its baseline sits on the chart's own baseline, not the widget's
+            let inset: CGFloat = boxState || frameState ? lineWidth : 0
+            let letterWidth: CGFloat = labelImage.size.height
             
-            var yMargin: CGFloat = 0
-            for char in labelString {
-                let rect = CGRect(x: x, y: yMargin, width: letterWidth, height: letterHeight)
-                char.draw(with: rect)
-                yMargin += letterHeight
-            }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current?.imageInterpolation = .none
+            let transform = NSAffineTransform()
+            transform.translateX(by: x + letterWidth, yBy: inset)
+            transform.rotate(byDegrees: 90)
+            transform.concat()
+            labelImage.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
+            NSGraphicsContext.restoreGraphicsState()
             
             width += letterWidth + Constants.Widget.spacing
             x = letterWidth + Constants.Widget.spacing

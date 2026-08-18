@@ -25,7 +25,8 @@ public class BarChart: WidgetWrapper {
     private var boxSettingsView: NSSwitch? = nil
     private var frameSettingsView: NSSwitch? = nil
     
-    public var NSLabelCharts: [NSAttributedString] = []
+    public var NSLabelString: NSAttributedString = NSAttributedString()
+    private var labelImage: NSImage? = nil
     
     public init(title: String, config: NSDictionary?, preview: Bool = false) {
         var widgetTitle: String = title
@@ -94,14 +95,21 @@ public class BarChart: WidgetWrapper {
             NSAttributedString.Key.paragraphStyle: style
         ]
         
-        for char in String(self.title.prefix(3)).uppercased().reversed() {
-            let str = NSAttributedString.init(string: "\(char)", attributes: stringAttributes)
-            self.NSLabelCharts.append(str)
-        }
+        self.NSLabelString = NSAttributedString(
+            string: String(self.title.prefix(3)).uppercased(),
+            attributes: stringAttributes
+        )
+        self.labelImage = rasterizedText(self.NSLabelString, appearance: self.effectiveAppearance)
     }
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+    
+    public override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        self.labelImage = rasterizedText(self.NSLabelString, appearance: self.effectiveAppearance)
+        self.display()
     }
     
     public override func draw(_ dirtyRect: NSRect) {
@@ -145,16 +153,21 @@ public class BarChart: WidgetWrapper {
             width += 118
         }
         
-        if self.labelState {
-            let letterHeight = self.frame.height / 3
-            let letterWidth: CGFloat = 6.0
+        if self.labelState, let labelImage = self.labelImage {
+            // a pre-rasterised string turned a quarter turn left: it reads bottom
+            // to top and keeps the grid fitting that rotated text throws away.
+            // Its baseline sits on the chart's own baseline, not the widget's
+            let inset: CGFloat = self.boxState || self.frameState ? lineWidth : 0
+            let letterWidth: CGFloat = labelImage.size.height
             
-            var yMargin: CGFloat = 0
-            for char in self.NSLabelCharts {
-                let rect = CGRect(x: x, y: yMargin, width: letterWidth, height: letterHeight)
-                char.draw(with: rect)
-                yMargin += letterHeight
-            }
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current?.imageInterpolation = .none
+            let transform = NSAffineTransform()
+            transform.translateX(by: x + letterWidth, yBy: inset)
+            transform.rotate(byDegrees: 90)
+            transform.concat()
+            labelImage.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
+            NSGraphicsContext.restoreGraphicsState()
             
             width += letterWidth + Constants.Widget.spacing
             x = letterWidth + Constants.Widget.spacing
