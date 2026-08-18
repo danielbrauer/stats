@@ -133,7 +133,7 @@ extension AppDelegate {
             completion(NSBackgroundActivityScheduler.Result.finished)
         }
         
-        if let updateInterval = AppUpdateInterval(rawValue: Store.shared.string(key: "update-interval", defaultValue: AppUpdateInterval.silent.rawValue)) {
+        if let updateInterval = AppUpdateInterval(rawValue: Store.shared.string(key: "update-interval", defaultValue: AppUpdateInterval.never.rawValue)) {
             self.updateActivity.invalidate()
             self.updateActivity.repeats = true
             
@@ -177,6 +177,13 @@ extension AppDelegate {
     }
     
     internal func checkForNewVersion(silent: Bool = false) {
+        // this build is not the one the releases hold, so nothing checks for
+        // them on its own: an update would put the official build over it.
+        // The button in the settings still checks when it is asked to
+        guard Store.shared.string(key: "update-interval", defaultValue: AppUpdateInterval.never.rawValue) != AppUpdateInterval.never.rawValue else {
+            return
+        }
+        
         updater.check { result, error in
             if error != nil {
                 debug("error updater.check(): \(error!.localizedDescription)")
