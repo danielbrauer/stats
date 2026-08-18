@@ -18,7 +18,7 @@ public class LineChart: WidgetWrapper {
     private var valueState: Bool = false
     private var valueColorState: Bool = false
     private var colorState: SColor = .systemAccent
-    private var historyCount: Int = 60
+    public private(set) var historyCount: Int = 60
     private var scaleState: Scale = .none
     
     private var chart: LineChartView = LineChartView(frame: NSRect(
@@ -30,6 +30,7 @@ public class LineChart: WidgetWrapper {
     private var colors: [SColor] = SColor.allCases.filter({ $0 != SColor.cluster })
     private var _value: Double = 0
     private var _pressureLevel: RAMPressure = .normal
+    private var _colorFunc: ((Double) -> NSColor)? = nil
     
     private var width: CGFloat {
         get {
@@ -143,9 +144,11 @@ public class LineChart: WidgetWrapper {
         
         var value: Double = 0
         var pressureLevel: RAMPressure = .normal
+        var colorFunc: ((Double) -> NSColor)? = nil
         self.queue.sync {
             value = self._value
             pressureLevel = self._pressureLevel
+            colorFunc = self._colorFunc
         }
         
         var width = self.width + (Constants.Widget.margin.x*2)
@@ -157,7 +160,7 @@ public class LineChart: WidgetWrapper {
         var color: NSColor = .controlAccentColor
         switch self.colorState {
         case .systemAccent: color = .controlAccentColor
-        case .utilization: color = value.usageColor()
+        case .utilization: color = colorFunc?(value) ?? value.usageColor()
         case .pressure: color = pressureLevel.pressureColor()
         case .monochrome:
             if self.boxState {
@@ -267,6 +270,30 @@ public class LineChart: WidgetWrapper {
         DispatchQueue.main.async(execute: {
             self.needsDisplay = true
         })
+    }
+    
+    // a module that keeps a history of its own hands the whole series over,
+    // one reading per column, rather than feeding it a reading at a time. The
+    // value shown beside the chart comes with it, since nothing was appended
+    public func setPoints(_ newPoints: [DoubleValue?], value: Double? = nil) {
+        if let value {
+            self.queue.sync {
+                self._value = value
+            }
+        }
+        self.chart.setPoints(newPoints)
+        DispatchQueue.main.async(execute: {
+            self.needsDisplay = true
+        })
+    }
+    
+    // what a reading means is the module's business: one whose readings are
+    // better high, a battery level, has no use for the usage colours this
+    // falls back to, where high is the one worth warning about
+    public func setColorFunc(_ newColorFunc: ((Double) -> NSColor)?) {
+        self.queue.sync {
+            self._colorFunc = newColorFunc
+        }
     }
     
     public func setPressure(_ newPressureLevel: RAMPressure) {

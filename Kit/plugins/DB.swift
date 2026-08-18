@@ -17,6 +17,7 @@ public class DB {
     private var lldb: LLDB? = nil
     private let queue = DispatchQueue(label: "eu.exelban.db")
     private let ttl: Int = 60*60
+    private var keyTTL: [String: Int] = [:]
     
     public var _writeTS: [String: Date] = [:]
     public var writeTS: [String: Date] {
@@ -67,7 +68,10 @@ public class DB {
         self.lldb?.close()
     }
     
-    public func setup<T: Codable>(_ type: T.Type, _ key: String) {
+    public func setup<T: Codable>(_ type: T.Type, _ key: String, ttl: Int? = nil) {
+        if let ttl {
+            self.queue.sync { self.keyTTL[key] = ttl }
+        }
         self.clean(key)
         if let raw = self.lldb?.findOne(key), let value = try? JSONDecoder().decode(type, from: Data(raw.utf8)) {
             self.queue.sync { self._values[key] = value }
@@ -99,9 +103,35 @@ public class DB {
         return self.values[key] as? T
     }
     
+    // the timestamped writes an `insert` leaves behind, oldest first. The
+    // timestamp lives in the key rather than the value, so it is read back
+    // from there and handed over beside the value it was written with
+    public func find<T: Decodable>(_ dynamicType: T.Type, key: String, since: Date? = nil) -> [(ts: Date, value: T)] {
+        guard let keys = self.lldb?.keys("\(key)@") as? [String] else { return [] }
+        let from = since?.currentTimeSeconds()
+        var result: [(ts: Date, value: T)] = []
+        
+        keys.forEach { (key: String) in
+            guard let raw = key.split(separator: "@").last, let ts = Int(raw) else { return }
+            if let from, ts < from { return }
+            guard let str = self.lldb?.findOne(key),
+                  let value = try? JSONDecoder().decode(dynamicType, from: Data(str.utf8)) else { return }
+            result.append((ts: Date(timeIntervalSince1970: Double(ts)), value: value))
+        }
+        
+        return result.sorted { $0.ts < $1.ts }
+    }
+    
+    // `setup` only prunes at launch, which is too late for a key that is
+    // written for as long as the app runs
+    public func prune(_ key: String) {
+        self.clean(key)
+    }
+    
     private func clean(_ key: String) {
         guard let keys = self.lldb?.keys(key) as? [String] else { return }
-        let maxLiveTS = Date().currentTimeSeconds() - self.ttl
+        let ttl = self.queue.sync { self.keyTTL[key] ?? self.ttl }
+        let maxLiveTS = Date().currentTimeSeconds() - ttl
         var toDeleteKeys: [String] = []
         
         keys.forEach { (key: String) in

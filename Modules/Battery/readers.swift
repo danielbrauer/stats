@@ -11,6 +11,7 @@
 
 import Cocoa
 import Kit
+import SQLite3
 
 internal class UsageReader: Reader<Battery_Usage> {
     private var service: io_connect_t = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
@@ -101,7 +102,16 @@ internal class UsageReader: Reader<Battery_Usage> {
                 if !isARM {
                     self.usage.state = list[kIOPSBatteryHealthKey] as? String
                 }
-                self.usage.health = Int((Double(100 * self.usage.maxCapacity) / Double(self.usage.designedCapacity)).rounded(.toNearestOrEven))
+                // on Apple silicon the registry keeps a health percentage of
+                // its own, the one System Settings shows, already smoothed and
+                // capped by Apple. Elsewhere it is a charge in mAh and the
+                // health is worked out from the capacities above
+                if isARM, let health = self.getIntValue("MaxCapacity" as CFString) ?? batteryData?["MaxCapacity"] as? Int,
+                   health > 0, health <= 100 {
+                    self.usage.health = health
+                } else {
+                    self.usage.health = Int((Double(100 * self.usage.maxCapacity) / Double(self.usage.designedCapacity)).rounded(.toNearestOrEven))
+                }
                 
                 self.usage.current = self.getIntValue("Amperage" as CFString) ?? 0
                 self.usage.voltage = self.getVoltage() ?? 0
@@ -267,5 +277,81 @@ public class ProcessReader: Reader<[TopProcess]> {
         }
         
         self.callback(processes.suffix(self.numberOfProcesses).sorted(by: { $0.usage > $1.usage }))
+    }
+}
+
+// macOS keeps a log of the battery level of its own, sampled every five or six
+// minutes and held for a month, in a database powerd writes and anything can
+// read. Stats has no readings from before it was started, or from while it was
+// closed, so it takes those stretches from there and the chart is worth looking
+// at from the first launch rather than after four hours of one
+internal class PowerlogReader {
+    private static let path: String = "/private/var/db/powerlog/Library/BatteryLife/CurrentPowerlog.PLSQL"
+    // the tables are Apple's, and they rename theirs between releases: every
+    // step of the read is allowed to fail, and a failure just means no priming.
+    // The detailed table knows whether the cable was in and samples every
+    // minute, but is only kept for a couple of days; the level-only table it
+    // falls back to is kept for a month and knows nothing about the cable
+    private static let query: String = """
+        SELECT timestamp, Level, IsCharging, ExternalConnected FROM PLBatteryAgent_EventBackward_Battery
+        WHERE timestamp >= ? ORDER BY timestamp
+        """
+    private static let fallbackQuery: String = """
+        SELECT timestamp, Level, IsCharging FROM PLBatteryAgent_EventBackward_BatteryUI
+        WHERE timestamp >= ? ORDER BY timestamp
+        """
+    
+    public static func read(since: Date) -> [ChargePoint] {
+        guard let db = self.open() else { return [] }
+        defer { sqlite3_close(db) }
+        
+        let readings = self.read(db, self.query, since: since)
+        return readings.isEmpty ? self.read(db, self.fallbackQuery, since: since) : readings
+    }
+    
+    private static func read(_ db: OpaquePointer, _ query: String, since: Date) -> [ChargePoint] {
+        var statement: OpaquePointer? = nil
+        guard sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_double(statement, 1, since.timeIntervalSince1970)
+        let columns = sqlite3_column_count(statement)
+        
+        var readings: [ChargePoint] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let ts = sqlite3_column_double(statement, 0)
+            let level = sqlite3_column_double(statement, 1) / 100
+            guard ts > 0, level > 0, level <= 1 else { continue }
+            
+            // charging means the cable was in, so the fallback under-reports
+            // the cable rather than claiming stretches it knows nothing about
+            let isCharging = sqlite3_column_int(statement, 2) == 1
+            let isPlugged = columns > 3 ? sqlite3_column_int(statement, 3) == 1 : isCharging
+            
+            readings.append(ChargePoint(
+                ts: Date(timeIntervalSince1970: ts),
+                value: Battery_Charge(level: level, isCharging: isCharging, isPlugged: isPlugged)
+            ))
+        }
+        
+        return readings
+    }
+    
+    // read only throughout: the file belongs to the system and is being written
+    // to while it is read. Failing that, the same file read as an unchanging
+    // one, which skips whatever is still in the write-ahead log
+    private static func open() -> OpaquePointer? {
+        var db: OpaquePointer? = nil
+        if sqlite3_open_v2(self.path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK {
+            return db
+        }
+        sqlite3_close(db)
+        
+        db = nil
+        if sqlite3_open_v2("file:\(self.path)?immutable=1", &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK {
+            return db
+        }
+        sqlite3_close(db)
+        
+        return nil
     }
 }

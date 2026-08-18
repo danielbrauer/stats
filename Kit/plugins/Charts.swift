@@ -686,9 +686,11 @@ public class LineChartView: ChartView {
         self.displayIfVisible()
     }
     
-    public func setPoints(_ newPoints: [DoubleValue]) {
+    // a gap in the list is a stretch the caller has no reading for, and is
+    // drawn as a break in the line rather than as a reading of zero
+    public func setPoints(_ newPoints: [DoubleValue?]) {
         self.write {
-            self.points = newPoints.map { Optional($0) }
+            self.points = newPoints
             self.head = 0
         }
         self.onMain { [weak self] in
@@ -1267,8 +1269,26 @@ public class GaugeChartView: ChartView {
     }
 }
 
+// a stretch of a chart the caller has something to say about, as a share of
+// its width: it runs behind the readings and pays no attention to where one
+// column ends and the next starts
+public struct ChartSpan {
+    public let from: Double
+    public let to: Double
+    public let color: NSColor
+    
+    public init(from: Double, to: Double, color: NSColor) {
+        self.from = from
+        self.to = to
+        self.color = color
+    }
+}
+
 public class ColumnChartView: ChartView {
-    private var values: [ColorValue] = []
+    private var values: [ColorValue?] = []
+    private var spans: [ChartSpan] = []
+    private var dateFormatter: DateFormatter? = nil
+    private var track: Bool = true
     private var cursor: CGPoint? = nil
     
     public init(frame: NSRect = NSRect.zero, num: Int, animation: Bool = true) {
@@ -1293,9 +1313,15 @@ public class ColumnChartView: ChartView {
     }
     
     public override func draw(_ dirtyRect: NSRect) {
-        var values: [ColorValue] = []
+        var values: [ColorValue?] = []
+        var spans: [ChartSpan] = []
+        var dateFormatter: DateFormatter? = nil
+        var track: Bool = true
         self.read {
             values = self.values
+            spans = self.spans
+            dateFormatter = self.dateFormatter
+            track = self.track
         }
         
         guard !values.isEmpty else { return }
@@ -1307,18 +1333,41 @@ public class ColumnChartView: ChartView {
         let partitionSize: CGSize = CGSize(width: (self.frame.width - (count*spacing)) / count, height: self.frame.height)
         let radius: CGFloat = min(3, partitionSize.width/2)
         
-        var list: [(value: Double, path: NSBezierPath)] = []
+        // the spans go down first and square, running the height of the chart
+        // and stopping where the stretch they stand for stopped, whether or
+        // not that is where a column does
+        for span in spans {
+            let from = max(0, min(1, span.from))
+            let to = max(0, min(1, span.to))
+            guard to > from else { continue }
+            span.color.setFill()
+            NSBezierPath(rect: NSRect(
+                x: from * self.frame.width,
+                y: 0,
+                width: (to - from) * self.frame.width,
+                height: self.frame.height
+            )).fill()
+        }
+        
+        var list: [(value: ColorValue, path: NSBezierPath)] = []
         var x: CGFloat = 0
         for i in 0..<values.count {
-            let track = NSBezierPath(
+            let column = NSBezierPath(
                 roundedRect: NSRect(x: x, y: 0, width: partitionSize.width, height: partitionSize.height),
                 xRadius: radius, yRadius: radius
             )
-            NSColor.underPageBackgroundColor.withAlphaComponent(0.25).setFill()
-            track.fill()
-            track.close()
+            if track {
+                NSColor.underPageBackgroundColor.withAlphaComponent(0.25).setFill()
+                column.fill()
+            }
+            column.close()
             
-            let value = values[i]
+            // a column the caller has no reading for keeps its track and stays
+            // out of the tooltip, rather than standing there as a reading of nil
+            guard let value = values[i] else {
+                x += partitionSize.width + spacing
+                continue
+            }
             let color = value.color ?? .controlAccentColor
             let h = min(max(0, CGFloat(value.value) * partitionSize.height), partitionSize.height)
             
@@ -1340,26 +1389,63 @@ public class ColumnChartView: ChartView {
             }
             
             x += partitionSize.width + spacing
-            list.append((value: value.value, path: track))
+            list.append((value: value, path: column))
         }
         
         if let p = self.cursor {
             let matchingBlock = list.first(where: { $0.path.contains(p) })
             if let block = matchingBlock {
-                let value = "\(Int(block.value.rounded(toPlaces: 2) * 100))%"
-                let width: CGFloat = block.value == 1 ? 38 : block.value > 0.1 ? 32 : 24
-                let tooltipHeight: CGFloat = 12
+                let value = "\(Int(block.value.value.rounded(toPlaces: 2) * 100))%"
+                let subtitle = dateFormatter?.string(from: block.value.ts)
+                var width: CGFloat = block.value.value == 1 ? 38 : block.value.value > 0.1 ? 32 : 24
+                let tooltipHeight: CGFloat = subtitle != nil ? 24 : 12
+                if let subtitle {
+                    width = max(width, subtitle.widthOfString(usingFont: NSFont.systemFont(ofSize: 9, weight: .medium)) + 10)
+                }
                 let gap: CGFloat = 4
                 let tooltipX = min(p.x + gap, self.bounds.width - width)
                 let tooltipY = (self.bounds.height - p.y) < (tooltipHeight + gap) ? (p.y - tooltipHeight - gap - 10) : (p.y + gap)
-                drawToolTip(self.bounds, CGPoint(x: tooltipX, y: tooltipY), CGSize(width: width, height: self.bounds.height), value: value)
+                drawToolTip(
+                    self.bounds,
+                    CGPoint(x: tooltipX, y: tooltipY),
+                    CGSize(width: width, height: self.bounds.height),
+                    value: value,
+                    subtitle: subtitle
+                )
             }
         }
     }
     
-    public func setValues(_ values: [ColorValue]) {
-        self.write { self.values = values }
+    public func setValues(_ values: [ColorValue?], spans: [ChartSpan]? = nil) {
+        self.write {
+            self.values = values
+            if let spans {
+                self.spans = spans
+            }
+        }
         self.fadeOrDisplay()
+    }
+    
+    // the ground each column stands on, which says where a column would be
+    // were it not empty. A chart whose columns are never empty has no use for
+    // it and can turn it off
+    public func setTrack(_ visible: Bool) {
+        self.write { self.track = visible }
+        self.displayIfVisible()
+    }
+    
+    // a column that stands for a stretch of time says which stretch it was, in
+    // the tooltip under the reading
+    public func setTooltipDateFormat(_ format: String?) {
+        self.write {
+            guard let format else {
+                self.dateFormatter = nil
+                return
+            }
+            let formatter = DateFormatter()
+            formatter.dateFormat = format
+            self.dateFormatter = formatter
+        }
     }
     
     public override func mouseEntered(with event: NSEvent) {

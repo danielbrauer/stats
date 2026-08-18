@@ -14,6 +14,7 @@ import Kit
 
 internal class Popup: PopupWrapper {
     private let dashboardHeight: CGFloat = 160
+    private let chartHeight: CGFloat = 90 + Constants.Popup.separatorHeight
     
     private var dashboardBatteryView: BatteryView = BatteryView()
     private var dashboardBatteryStatus: BatteryStatus = BatteryStatus()
@@ -40,11 +41,37 @@ internal class Popup: PopupWrapper {
     private var adapterCurrentField: NSTextField? = nil
     private var adapterVoltageField: NSTextField? = nil
     
+    private var chart: LineChartView? = nil
+    private var chargeHistory: ChargeHistory? = nil
+    private var chargingAt: [Date: Bool] = [:]
+    
     private var processesView: NSView? = nil
     private var processes: ProcessesView? = nil
     private var processesInitialized: Bool = false
     
     private let usageCache = PopupCache<Battery_Usage>()
+    
+    private var chartColorState: SColor = .systemAccent
+    private var chartColor: NSColor { self.chartColorState.additional as? NSColor ?? NSColor.systemBlue }
+    private var chargeHistoryPeriod: Int = Int(ChargeHistory.window)
+    private var chargeHistoryPeriods: [KeyValue_p] {
+        [
+            KeyValue_t(key: "1800", value: "30 minutes"),
+            KeyValue_t(key: "3600", value: "1 hour"),
+            KeyValue_t(key: "7200", value: "2 hours"),
+            KeyValue_t(key: "14400", value: "4 hours")
+        ]
+    }
+    
+    // a column every couple of minutes over the longest period, and never
+    // narrower than the rate the history is written at, so a column with no
+    // reading in it is one Stats has nothing to say about
+    private var columnPeriod: TimeInterval {
+        max(ChargeHistory.interval, Double(self.chargeHistoryPeriod) / 120)
+    }
+    private var columns: Int {
+        Int((Double(self.chargeHistoryPeriod) / self.columnPeriod).rounded())
+    }
     
     private var numberOfProcesses: Int {
         Store.shared.int(key: "\(self.title)_processes", defaultValue: 8)
@@ -62,7 +89,11 @@ internal class Popup: PopupWrapper {
         self.spacing = 0
         self.orientation = .vertical
         
+        self.chartColorState = SColor.fromString(Store.shared.string(key: "\(self.title)_chartColor", defaultValue: self.chartColorState.key))
+        self.chargeHistoryPeriod = Store.shared.int(key: "\(self.title)_chargeHistory", defaultValue: self.chargeHistoryPeriod)
+        
         self.addArrangedSubview(self.initDashboard())
+        self.addArrangedSubview(self.initChart())
         self.addArrangedSubview(self.initDetails())
         self.addArrangedSubview(self.initBattery())
         self.addArrangedSubview(self.initProcesses())
@@ -76,6 +107,11 @@ internal class Popup: PopupWrapper {
     
     public override func appear() {
         self.replay(self.usageCache, render: self.renderUsage)
+        self.renderChart()
+    }
+    
+    public override func updateLayer() {
+        self.chart?.display()
     }
     
     public override func disappear() {
@@ -145,6 +181,45 @@ internal class Popup: PopupWrapper {
         
         view.addArrangedSubview(self.dashboardBatteryView)
         view.addArrangedSubview(information)
+        
+        return view
+    }
+    
+    private func initChart() -> NSView {
+        let view: NSView = NSView(frame: NSRect(x: 0, y: 0, width: self.frame.width, height: self.chartHeight))
+        view.heightAnchor.constraint(equalToConstant: self.chartHeight).isActive = true
+        
+        let separator = separatorView(
+            localizedString("Charge history"),
+            origin: NSPoint(x: 0, y: self.chartHeight-Constants.Popup.separatorHeight),
+            width: self.frame.width
+        )
+        let container: NSView = NSView(frame: NSRect(x: 0, y: 0, width: self.frame.width, height: separator.frame.origin.y))
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.lightGray.withAlphaComponent(0.1).cgColor
+        container.layer?.cornerRadius = Constants.Popup.radius
+        
+        // a level is a share of a full charge, so the chart keeps a scale of
+        // its own from empty to full rather than one taken from the readings
+        let chart = LineChartView(
+            frame: NSRect(x: 1, y: 0, width: view.frame.width - 2, height: container.frame.height),
+            num: self.columns,
+            scale: .fixed,
+            fixedScale: 1,
+            animation: false
+        )
+        chart.setColor(self.chartColor)
+        chart.setLegend(x: true, y: true)
+        chart.setToolTipFunc { [weak self] value in
+            let level = "\(Int((value.value*100).rounded()))%"
+            guard self?.chargingAt[value.ts] ?? false else { return level }
+            return "\(level) ⚡"
+        }
+        self.chart = chart
+        container.addSubview(chart)
+        
+        view.addSubview(separator)
+        view.addSubview(container)
         
         return view
     }
@@ -288,6 +363,37 @@ internal class Popup: PopupWrapper {
         return view
     }
     
+    public func setChargeHistory(_ history: ChargeHistory) {
+        self.chargeHistory = history
+        self.renderChart()
+    }
+    
+    public func chargeHistoryCallback() {
+        DispatchQueue.main.async {
+            guard self.window?.isVisible ?? false else { return }
+            self.renderChart()
+        }
+    }
+    
+    private func renderChart() {
+        guard let chart = self.chart, let history = self.chargeHistory else { return }
+        
+        var chargingAt: [Date: Bool] = [:]
+        let points: [DoubleValue?] = history.series(
+            columns: self.columns,
+            columnPeriod: self.columnPeriod
+        ).map { reading in
+            guard let reading else { return nil }
+            chargingAt[reading.ts] = reading.value.isCharging
+            var point = DoubleValue(reading.value.level)
+            point.ts = reading.ts
+            return point
+        }
+        
+        self.chargingAt = chargingAt
+        chart.setPoints(points)
+    }
+    
     public func usageCallback(_ value: Battery_Usage) {
         self.apply(value, to: self.usageCache, render: self.renderUsage)
     }
@@ -410,7 +516,34 @@ internal class Popup: PopupWrapper {
             ))
         ]))
         
+        view.addArrangedSubview(PreferencesSection([
+            PreferencesRow(localizedString("Chart color"), component: colorSelectView(
+                action: #selector(self.toggleChartColor),
+                items: SColor.allColors,
+                selected: self.chartColorState.key
+            )),
+            PreferencesRow(localizedString("Chart history"), component: selectView(
+                action: #selector(self.toggleChargeHistory),
+                items: self.chargeHistoryPeriods,
+                selected: "\(self.chargeHistoryPeriod)"
+            ))
+        ]))
+        
         return view
+    }
+    
+    @objc private func toggleChartColor(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String else { return }
+        self.chartColorState = SColor.fromString(key, defaultValue: self.chartColorState)
+        Store.shared.set(key: "\(self.title)_chartColor", value: self.chartColorState.key)
+        self.chart?.setColor(self.chartColor)
+    }
+    
+    @objc private func toggleChargeHistory(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String, let value = Int(key) else { return }
+        self.chargeHistoryPeriod = value
+        Store.shared.set(key: "\(self.title)_chargeHistory", value: value)
+        self.renderChart()
     }
 }
 

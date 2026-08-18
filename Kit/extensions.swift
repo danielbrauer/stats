@@ -158,40 +158,19 @@ public extension Double {
     
     func batteryColor(color: Bool = false, lowPowerMode: Bool? = nil) -> NSColor {
         if let mode = lowPowerMode, mode {
-            return NSColor.systemOrange
+            return NSColor.systemYellow
         }
-        
-        switch self {
-        case 0.2...0.4:
-            if !color {
-                return NSColor.textColor
-            }
-            return NSColor.systemOrange
-        case 0.4...1:
-            if self == 1 {
-                return NSColor.textColor
-            }
-            if !color {
-                return NSColor.textColor
-            }
-            return NSColor.systemGreen
-        default:
+        if self < 0.2 {
             return NSColor.systemRed
         }
+        return color ? NSColor.systemGreen : NSColor.textColor
     }
     
     func batteryColorV2(lowPowerMode: Bool = false) -> NSColor {
         if lowPowerMode {
-            return NSColor.systemOrange
+            return NSColor.systemYellow
         }
-        switch self {
-        case 0.2...0.4:
-            return NSColor.systemOrange
-        case 0.4...1:
-            return NSColor.systemGreen
-        default:
-            return NSColor.systemRed
-        }
+        return self < 0.2 ? NSColor.systemRed : NSColor.systemGreen
     }
     
     func secondsToHoursMinutesSeconds() -> (Int, Int) {

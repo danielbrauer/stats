@@ -25,6 +25,7 @@ public class BatteryWidget: WidgetWrapper {
     private var _charging: Bool = false
     private var _ACStatus: Bool = false
     private var _optimizedCharging: Bool = false
+    private var _lowPowerMode: Bool = false
     
     public init(title: String, preview: Bool = false) {
         let widgetTitle: String = title
@@ -70,6 +71,7 @@ public class BatteryWidget: WidgetWrapper {
         var charging: Bool = false
         var ACStatus: Bool = false
         var optimizedCharging: Bool = false
+        var lowPowerMode: Bool = false
         var timeFormat: String = "short"
         self.queue.sync {
             percentage = self._percentage
@@ -77,6 +79,7 @@ public class BatteryWidget: WidgetWrapper {
             charging = self._charging
             ACStatus = self._ACStatus
             optimizedCharging = self._optimizedCharging
+            lowPowerMode = self._lowPowerMode
             timeFormat = self.timeFormat
         }
         
@@ -187,7 +190,7 @@ public class BatteryWidget: WidgetWrapper {
             let innerOffset: CGFloat = -offset + borderWidth + 1
             let innerRadius: CGFloat = self.xlSizeState ? 2 : 1
             var colorState = self.colorState
-            let color = percentage.batteryColor(color: colorState)
+            let color = percentage.batteryColor(color: colorState, lowPowerMode: lowPowerMode)
             let innerPercentage = self.additional == "innerPercentage" && (!ACStatus || !self.chargerIconInside)
             
             if innerPercentage {
@@ -378,11 +381,15 @@ public class BatteryWidget: WidgetWrapper {
         ctx.restoreGState()
     }
     
-    public func setValue(percentage: Double? = nil, ACStatus: Bool? = nil, isCharging: Bool? = nil, optimizedCharging: Bool? = nil, time: Int? = nil) {
+    public func setValue(percentage: Double? = nil, ACStatus: Bool? = nil, isCharging: Bool? = nil, optimizedCharging: Bool? = nil, time: Int? = nil, lowPowerMode: Bool? = nil) {
         let updated = self.queue.sync { () -> Bool in
             var updated: Bool = false
             let timeFormat: String = Store.shared.string(key: "\(self.title)_timeFormat", defaultValue: self.timeFormat)
             
+            if let mode = lowPowerMode, self._lowPowerMode != mode {
+                self._lowPowerMode = mode
+                updated = true
+            }
             if self._percentage != percentage {
                 self._percentage = percentage
                 updated = true
