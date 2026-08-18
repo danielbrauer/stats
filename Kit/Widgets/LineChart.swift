@@ -299,7 +299,7 @@ public class LineChart: WidgetWrapper {
                 action: #selector(self.toggleValueColor),
                 state: self.valueColorState
             )),
-            PreferencesRow(localizedString("Number of reads in the chart"), component: historySlider),
+            PreferencesRow(localizedString("Width"), component: historySlider),
             PreferencesRow(localizedString("Scaling"), component: selectView(
                 action: #selector(self.toggleScale),
                 items: Scale.allCases.filter({ $0 != .fixed }),

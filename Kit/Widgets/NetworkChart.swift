@@ -305,7 +305,7 @@ public class NetworkChart: WidgetWrapper {
                 items: self.colors,
                 selected: self.uploadColor.key
             )),
-            PreferencesRow(localizedString("Number of reads in the chart"), component: historySlider),
+            PreferencesRow(localizedString("Width"), component: historySlider),
             PreferencesRow(localizedString("Scaling"), component: selectView(
                 action: #selector(self.toggleScale),
                 items: Scale.allCases.filter({ $0 != .fixed }),

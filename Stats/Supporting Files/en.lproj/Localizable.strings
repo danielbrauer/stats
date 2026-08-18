@@ -218,6 +218,7 @@
 "Show symbols" = "Show symbols";
 "Label widget" = "Label";
 "Number of reads in the chart" = "Number of reads in the chart";
+"Width" = "Width";
 "Color of download" = "Color of download";
 "Color of upload" = "Color of upload";
 "Monospaced font" = "Monospaced font";
