@@ -315,7 +315,11 @@ public class LineChartView: ChartView {
         let offset: CGFloat = 1 / (NSScreen.main?.backingScaleFactor ?? 1)
         let xLegendHeight: CGFloat = xLegend ? 14 : 0
         let yLegendWidth: CGFloat = yLegend ? 30 : 0
-        let height: CGFloat = self.frame.height - offset - xLegendHeight
+        // a full reading puts the line's centre half a stroke below the top
+        // edge, so the stroke lands inside the top row instead of straddling
+        // the two below it. Holding back a whole stroke, as this did, both
+        // blurred the line and kept the chart a pixel short of its own ceiling
+        let height: CGFloat = self.frame.height - (offset/2) - xLegendHeight
         let chartWidth: CGFloat = self.frame.width - yLegendWidth
         let xRatio: CGFloat = chartWidth / CGFloat(points.count-1)
         let zero: CGFloat = flipY ? self.frame.height : xLegendHeight
