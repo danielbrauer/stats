@@ -47,7 +47,7 @@ public class NetworkChart: WidgetWrapper {
     private var frameSettingsView: NSSwitch? = nil
     
     public var NSLabelString: NSAttributedString = NSAttributedString()
-    private var labelImage: NSImage? = nil
+    private var label: RasterizedText? = nil
     
     public init(title: String, config: NSDictionary?, preview: Bool = false) {
         var widgetTitle: String = title
@@ -117,7 +117,7 @@ public class NetworkChart: WidgetWrapper {
             string: String(self.title.prefix(3)).uppercased(),
             attributes: stringAttributes
         )
-        self.labelImage = rasterizedText(self.NSLabelString, appearance: self.effectiveAppearance)
+        self.label = rasterizedText(self.NSLabelString, appearance: self.effectiveAppearance)
     }
     
     required init?(coder: NSCoder) {
@@ -126,7 +126,7 @@ public class NetworkChart: WidgetWrapper {
     
     public override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        self.labelImage = rasterizedText(self.NSLabelString, appearance: self.effectiveAppearance)
+        self.label = rasterizedText(self.NSLabelString, appearance: self.effectiveAppearance)
         self.needsDisplay = true
     }
     
@@ -146,7 +146,7 @@ public class NetworkChart: WidgetWrapper {
         var uploadLimitBytes: Double = 0
         var downloadLimitBytes: Double = 0
         var originWidth: CGFloat = 0
-        var labelImage: NSImage? = nil
+        var label: RasterizedText? = nil
         var downloadColor: SColor = .secondBlue
         var uploadColor: SColor = .secondRed
         self.queue.sync {
@@ -160,7 +160,7 @@ public class NetworkChart: WidgetWrapper {
             uploadLimitBytes = self.uploadLimitBytes
             downloadLimitBytes = self.downloadLimitBytes
             reverseOrderState = self.reverseOrderState
-            labelImage = self.labelImage
+            label = self.label
             originWidth = self.width
             downloadColor = self.downloadColor
             uploadColor = self.uploadColor
@@ -172,20 +172,23 @@ public class NetworkChart: WidgetWrapper {
         var x: CGFloat = 0
         var width = originWidth + (Constants.Widget.margin.x*2)
         
-        if labelState, let labelImage = labelImage {
+        if labelState, let label = label {
             // a pre-rasterised string turned a quarter turn left: it reads bottom
             // to top and keeps the grid fitting that rotated text throws away.
-            // Its baseline sits on the chart's own baseline, not the widget's
+            // Its first letter starts on the chart's own baseline, not on the
+            // widget's: the baseline is the one edge that is always there. The
+            // space the font leaves before that letter is taken off the offset,
+            // so it is the ink that lands on the baseline, not the string box
             let inset: CGFloat = boxState || frameState ? lineWidth : 0
-            let letterWidth: CGFloat = labelImage.size.height
+            let letterWidth: CGFloat = label.image.size.height
             
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current?.imageInterpolation = .none
             let transform = NSAffineTransform()
-            transform.translateX(by: x + letterWidth, yBy: inset)
+            transform.translateX(by: x + letterWidth, yBy: inset - label.bearing)
             transform.rotate(byDegrees: 90)
             transform.concat()
-            labelImage.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
+            label.image.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
             NSGraphicsContext.restoreGraphicsState()
             
             width += letterWidth + Constants.Widget.spacing

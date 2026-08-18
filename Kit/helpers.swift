@@ -897,11 +897,23 @@ public class ColorView: NSView {
     }
 }
 
+// A string rasterised upright, together with the blank space that stands
+// before its first letter, so the caller can line the ink up with something.
+public struct RasterizedText {
+    public let image: NSImage
+    public let bearing: CGFloat
+}
+
 // Text drawn under a rotated transform loses its grid fitting: the hinted stems
 // land at arbitrary sub-pixel positions and small type comes out soft. Rasterise
 // it upright at the backing scale instead. A quarter turn of the resulting
 // bitmap is a pure pixel permutation, so the glyphs survive exactly as hinted.
-public func rasterizedText(_ string: NSAttributedString, appearance: NSAppearance) -> NSImage? {
+//
+// The string starts with the side bearing of its first letter, which the turn
+// makes into a gap below the label. Measure it and hand it back rather than
+// cutting it off: the first column often carries a trace of the letter, and
+// the eye reads the letter as starting at the column after it.
+public func rasterizedText(_ string: NSAttributedString, appearance: NSAppearance) -> RasterizedText? {
     let px: CGFloat = 1 / (NSScreen.main?.backingScaleFactor ?? 1)
     let size = string.size()
     let width: CGFloat = (size.width / px).rounded(.up) * px
@@ -931,7 +943,21 @@ public func rasterizedText(_ string: NSAttributedString, appearance: NSAppearanc
     
     let image = NSImage(size: NSSize(width: width, height: height))
     image.addRepresentation(rep)
-    return image
+    return RasterizedText(image: image, bearing: CGFloat(paleColumns(of: rep)) * px)
+}
+
+// how many columns of the bitmap, counted from the left, are covered less than
+// half way at every pixel. Such a column is the soft edge of the first letter
+// rather than the letter itself, and reads as empty
+private func paleColumns(of rep: NSBitmapImageRep) -> Int {
+    guard let data = rep.bitmapData, rep.bitsPerPixel % 8 == 0 else { return 0 }
+    let bytesPerPixel = rep.bitsPerPixel / 8
+    for x in 0..<rep.pixelsWide {
+        for y in 0..<rep.pixelsHigh where data[y*rep.bytesPerRow + x*bytesPerPixel + 3] >= 128 {
+            return x
+        }
+    }
+    return 0
 }
 
 public func localizedString(_ key: String, _ params: String..., comment: String = "") -> String {
