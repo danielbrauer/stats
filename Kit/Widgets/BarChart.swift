@@ -182,29 +182,45 @@ public class BarChart: WidgetWrapper {
         x += offset
         for i in 0..<value.count {
             var y = offset
+            let stackHeight = maxPartitionHeight * CGFloat(value[i].reduce(0) { $0 + $1.value })
             for a in 0..<value[i].count {
                 let partitionValue = value[i][a]
                 let partitionHeight = maxPartitionHeight * CGFloat(partitionValue.value)
                 let partition = NSBezierPath(rect: NSRect(x: x, y: y, width: partitionWidth, height: partitionHeight))
                 
-                if partitionValue.color == nil {
+                var color: NSColor
+                if let partitionColor = partitionValue.color {
+                    color = partitionColor
+                } else {
                     switch self.colorState {
-                    case .systemAccent: NSColor.controlAccentColor.set()
-                    case .utilization: partitionValue.value.usageColor(zones: colorZones, reversed: self.title == "Battery").set()
-                    case .pressure: pressureLevel.pressureColor().set()
+                    case .systemAccent: color = NSColor.controlAccentColor
+                    case .utilization: color = partitionValue.value.usageColor(zones: colorZones, reversed: self.title == "Battery")
+                    case .pressure: color = pressureLevel.pressureColor()
                     case .monochrome:
                         if self.boxState {
-                            (isDarkMode ? NSColor.black : NSColor.white).set()
+                            color = isDarkMode ? NSColor.black : NSColor.white
                         } else {
-                            (isDarkMode ? NSColor.white : NSColor.black).set()
+                            color = isDarkMode ? NSColor.white : NSColor.black
                         }
-                    default: (self.colorState.additional as? NSColor ?? .controlAccentColor).set()
+                    default: color = self.colorState.additional as? NSColor ?? .controlAccentColor
                     }
-                } else {
-                    partitionValue.color?.set()
                 }
                 
-                partition.fill()
+                // the gradient ramps over the whole stacked column, not per segment,
+                // so stacked values keep their own color without banding at the joins
+                let gradient = NSGradient(colors: [
+                    color.withAlphaComponent(0.5),
+                    color.withAlphaComponent(1.0)
+                ])
+                if let gradient, stackHeight > 0 {
+                    NSGraphicsContext.saveGraphicsState()
+                    partition.setClip()
+                    gradient.draw(in: NSRect(x: x, y: offset, width: partitionWidth, height: stackHeight), angle: 90)
+                    NSGraphicsContext.restoreGraphicsState()
+                } else {
+                    color.set()
+                    partition.fill()
+                }
                 partition.close()
                 
                 y += partitionHeight
