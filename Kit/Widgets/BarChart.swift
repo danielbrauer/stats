@@ -235,7 +235,10 @@ public class BarChart: WidgetWrapper {
                 if let gradient, stackHeight > 0 {
                     NSGraphicsContext.saveGraphicsState()
                     partition.setClip()
-                    gradient.draw(in: NSRect(x: x, y: offset, width: partitionWidth, height: stackHeight), angle: 90)
+                    // the ramp has to start where the bar starts. Starting it at
+                    // `offset`, half a pixel up, left the bottom half of the
+                    // bottom row unpainted and the bar ended on a soft edge
+                    gradient.draw(in: NSRect(x: x, y: inset, width: partitionWidth, height: stackHeight), angle: 90)
                     NSGraphicsContext.restoreGraphicsState()
                 } else {
                     color.set()
