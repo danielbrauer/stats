@@ -253,8 +253,10 @@ public class NetworkChart: WidgetWrapper {
         // hang from the outer edges and the ceiling is the centre line instead
         let topBase: CGFloat = invertedState ? outerTop : centre
         let bottomBase: CGFloat = invertedState ? outerBottom : centre
-        let topHeight: CGFloat = abs(outerTop - centre)
-        let bottomHeight: CGFloat = abs(centre - outerBottom)
+        // both halves reach the same distance, so equal speeds draw equal
+        // lengths. The centre line cannot sit exactly halfway when the chart is
+        // an even number of pixels tall, so the shorter of the two sides wins
+        let halfHeight: CGFloat = min(outerTop - centre, centre - outerBottom)
         
         let columnXPoint = { (point: Int) -> CGFloat in
             return chartFrame.minX + (CGFloat(point) * xRatio)
@@ -262,12 +264,12 @@ public class NetworkChart: WidgetWrapper {
         
         let topYPoint = { (point: Int) -> CGFloat in
             let value = min(reverseOrderState ? points[point].1 : points[point].0, topMax)
-            let height = scaleValue(scale: scaleState, value: value, maxValue: topMax, zeroValue: 256.0, maxHeight: topHeight, limit: 1)
+            let height = scaleValue(scale: scaleState, value: value, maxValue: topMax, zeroValue: 256.0, maxHeight: halfHeight, limit: 1)
             return invertedState ? topBase - height : topBase + height
         }
         let bottomYPoint = { (point: Int) -> CGFloat in
             let value = min(reverseOrderState ? points[point].0 : points[point].1, bottomMax)
-            let height = scaleValue(scale: scaleState, value: value, maxValue: bottomMax, zeroValue: 256.0, maxHeight: bottomHeight, limit: 1)
+            let height = scaleValue(scale: scaleState, value: value, maxValue: bottomMax, zeroValue: 256.0, maxHeight: halfHeight, limit: 1)
             return invertedState ? bottomBase + height : bottomBase - height
         }
         
