@@ -321,21 +321,30 @@ public class LineChartView: ChartView {
         // blurred the line and kept the chart a pixel short of its own ceiling
         let height: CGFloat = self.frame.height - (offset/2) - xLegendHeight
         let chartWidth: CGFloat = self.frame.width - yLegendWidth
-        let xRatio: CGFloat = chartWidth / CGFloat(points.count-1)
+        // every reading owns a column of the chart and its point sits in the
+        // middle of that column, so the line through it covers the column and
+        // nothing either side. On the column boundaries a steep segment was
+        // split over the two columns beside it, and at the two ends half of it
+        // fell outside the chart altogether
+        let columnWidth: CGFloat = points.isEmpty ? 0 : chartWidth / CGFloat(points.count)
         let zero: CGFloat = flipY ? self.frame.height : xLegendHeight
         
-        var lines: [[CGPoint]] = []
+        var lines: [(start: Int, points: [CGPoint])] = []
         var line: [CGPoint] = []
+        var lineStart: Int = 0
         var list: [(value: DoubleValue, point: CGPoint)] = []
         let needList = xLegend || (isTooltipEnabled && self.cursor != nil)
         
         for (i, v) in points.enumerated() {
             guard let v else {
                 if !line.isEmpty {
-                    lines.append(line)
+                    lines.append((lineStart, line))
                     line = []
                 }
                 continue
+            }
+            if line.isEmpty {
+                lineStart = i
             }
             
             var y = scaleValue(scale: scale, value: v.value, maxValue: maxValue, zeroValue: zeroValue, maxHeight: height, limit: fixedScale)
@@ -344,7 +353,7 @@ public class LineChartView: ChartView {
             }
             
             let point = CGPoint(
-                x: yLegendWidth + CGFloat(i) * xRatio,
+                x: yLegendWidth + (columnWidth/2) + CGFloat(i) * columnWidth,
                 y: y + xLegendHeight
             )
             line.append(point)
@@ -353,11 +362,11 @@ public class LineChartView: ChartView {
             }
         }
         if !line.isEmpty {
-            lines.append(line)
+            lines.append((lineStart, line))
         }
         
         var path = NSBezierPath()
-        for linePoints in lines {
+        for (start, linePoints) in lines {
             if linePoints.count == 1 {
                 path = NSBezierPath(ovalIn: CGRect(x: linePoints[0].x-offset, y: linePoints[0].y-offset, width: 1, height: 1))
                 lineColor.set()
@@ -367,18 +376,25 @@ public class LineChartView: ChartView {
                 continue
             }
 
+            // the first and last reading hold their half column out to the
+            // border, so the line runs the full width and stops on the edge
+            let last = linePoints[linePoints.count-1]
+            let leftEdge = start == 0 ? yLegendWidth : linePoints[0].x
+            let rightEdge = start + linePoints.count == points.count ? yLegendWidth + chartWidth : last.x
+
             path = NSBezierPath()
-            path.move(to: linePoints[0])
-            for i in 1..<linePoints.count {
+            path.move(to: CGPoint(x: leftEdge, y: linePoints[0].y))
+            for i in 0..<linePoints.count {
                 path.line(to: linePoints[i])
             }
+            path.line(to: CGPoint(x: rightEdge, y: last.y))
             lineColor.set()
             path.lineWidth = offset
             path.stroke()
 
             path = path.copy() as! NSBezierPath
-            path.line(to: CGPoint(x: linePoints[linePoints.count-1].x, y: zero))
-            path.line(to: CGPoint(x: linePoints[0].x, y: zero))
+            path.line(to: CGPoint(x: rightEdge, y: zero))
+            path.line(to: CGPoint(x: leftEdge, y: zero))
             path.close()
             if let gradient {
                 gradient.draw(in: path, angle: 90)

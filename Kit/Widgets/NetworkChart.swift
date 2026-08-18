@@ -238,9 +238,11 @@ public class NetworkChart: WidgetWrapper {
             bottomMax = 1
         }
         
-        // n points are joined by n-1 intervals, so they span the chart exactly
-        // and every one of them lands on a whole device pixel
-        let xRatio: CGFloat = points.count > 1 ? chartFrame.width / CGFloat(points.count - 1) : 0
+        // every read owns a column of the chart and its point sits in the middle
+        // of that column, so the line through it covers the column and nothing
+        // either side. On the column boundaries a steep segment was split over
+        // the two columns beside it, and at the ends half of it fell outside
+        let columnWidth: CGFloat = points.isEmpty ? 0 : chartFrame.width / CGFloat(points.count)
         
         // a 1px stroke is crisp when its centre sits half a pixel off the grid,
         // so every line the chart can draw is placed half a stroke inside its
@@ -273,7 +275,7 @@ public class NetworkChart: WidgetWrapper {
         let bottomFillBase: CGFloat = invertedState ? chartFrame.minY : middle
         
         let columnXPoint = { (point: Int) -> CGFloat in
-            return chartFrame.minX + (CGFloat(point) * xRatio)
+            return chartFrame.minX + (columnWidth/2) + (CGFloat(point) * columnWidth)
         }
         
         let topYPoint = { (point: Int) -> CGFloat in
@@ -287,15 +289,21 @@ public class NetworkChart: WidgetWrapper {
             return invertedState ? bottomBase + height : bottomBase - height
         }
         
+        // the first and last read hold their half column out to the border, so
+        // the line runs the full width of the chart and stops on its edge
         let topLinePath = NSBezierPath()
-        topLinePath.move(to: CGPoint(x: columnXPoint(0), y: topYPoint(0)))
+        topLinePath.move(to: CGPoint(x: chartFrame.minX, y: topYPoint(0)))
+        topLinePath.line(to: CGPoint(x: columnXPoint(0), y: topYPoint(0)))
         let bottomLinePath = NSBezierPath()
-        bottomLinePath.move(to: CGPoint(x: columnXPoint(0), y: bottomYPoint(0)))
+        bottomLinePath.move(to: CGPoint(x: chartFrame.minX, y: bottomYPoint(0)))
+        bottomLinePath.line(to: CGPoint(x: columnXPoint(0), y: bottomYPoint(0)))
         
         for i in 1..<points.count {
             topLinePath.line(to: CGPoint(x: columnXPoint(i), y: topYPoint(i)))
             bottomLinePath.line(to: CGPoint(x: columnXPoint(i), y: bottomYPoint(i)))
         }
+        topLinePath.line(to: CGPoint(x: chartFrame.maxX, y: topYPoint(points.count - 1)))
+        bottomLinePath.line(to: CGPoint(x: chartFrame.maxX, y: bottomYPoint(points.count - 1)))
         
         let topColor = (reverseOrderState ? self.uploadColor : downloadColor).additional as? NSColor
         let bottomColor = (reverseOrderState ? self.downloadColor : uploadColor).additional as? NSColor
@@ -312,8 +320,8 @@ public class NetworkChart: WidgetWrapper {
         context.saveGState()
         
         guard let topUnderLinePath = topLinePath.copy() as? NSBezierPath else { return }
-        topUnderLinePath.line(to: CGPoint(x: columnXPoint(points.count - 1), y: topFillBase))
-        topUnderLinePath.line(to: CGPoint(x: columnXPoint(0), y: topFillBase))
+        topUnderLinePath.line(to: CGPoint(x: chartFrame.maxX, y: topFillBase))
+        topUnderLinePath.line(to: CGPoint(x: chartFrame.minX, y: topFillBase))
         topUnderLinePath.close()
         topUnderLinePath.addClip()
         bottomColor?.withAlphaComponent(0.5).setFill()
@@ -324,8 +332,8 @@ public class NetworkChart: WidgetWrapper {
         context.saveGState()
         
         guard let bottomUnderLinePath = bottomLinePath.copy() as? NSBezierPath else { return }
-        bottomUnderLinePath.line(to: CGPoint(x: columnXPoint(points.count - 1), y: bottomFillBase))
-        bottomUnderLinePath.line(to: CGPoint(x: columnXPoint(0), y: bottomFillBase))
+        bottomUnderLinePath.line(to: CGPoint(x: chartFrame.maxX, y: bottomFillBase))
+        bottomUnderLinePath.line(to: CGPoint(x: chartFrame.minX, y: bottomFillBase))
         bottomUnderLinePath.close()
         bottomUnderLinePath.addClip()
         topColor?.withAlphaComponent(0.5).setFill()

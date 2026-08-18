@@ -61,12 +61,13 @@ public struct Widget_c_s {
     public let historyReadWidth: CGFloat = 0.5
     public var devicePixel: CGFloat { 1 / (NSScreen.main?.backingScaleFactor ?? 1) }
     
-    // n reads are drawn as n points joined by n-1 intervals, so the span they
-    // need is n-1 reads wide. Reserving n would make every interval slightly
-    // wider than a read, and only the first and last point would land on a
-    // whole pixel: the leading edge blurs until the chart is full.
+    // every read owns a column one read wide and its point sits in the middle
+    // of that column, so the line through it covers the column and nothing
+    // either side. Giving the reads n-1 columns instead put every point on a
+    // column boundary: a steep segment was split over the two columns beside
+    // it, and at the two ends half of it fell outside the chart altogether.
     public func chartWidth(_ historyCount: Int) -> CGFloat {
-        CGFloat(min(self.maxHistoryCount, max(self.minHistoryCount, historyCount)) - 1) * self.historyReadWidth
+        CGFloat(min(self.maxHistoryCount, max(self.minHistoryCount, historyCount))) * self.historyReadWidth
     }
 }
 
