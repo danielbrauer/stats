@@ -53,8 +53,14 @@ public struct Widget_c_s {
     public let minHistoryCount: Int = 10
     public let maxHistoryCount: Int = 120
     public let historyReadWidth: CGFloat = 0.5
+    public var devicePixel: CGFloat { 1 / (NSScreen.main?.backingScaleFactor ?? 1) }
+    
+    // n reads are drawn as n points joined by n-1 intervals, so the span they
+    // need is n-1 reads wide. Reserving n would make every interval slightly
+    // wider than a read, and only the first and last point would land on a
+    // whole pixel: the leading edge blurs until the chart is full.
     public func chartWidth(_ historyCount: Int) -> CGFloat {
-        CGFloat(min(self.maxHistoryCount, max(self.minHistoryCount, historyCount))) * self.historyReadWidth
+        CGFloat(min(self.maxHistoryCount, max(self.minHistoryCount, historyCount)) - 1) * self.historyReadWidth
     }
 }
 

@@ -32,7 +32,12 @@ public class LineChart: WidgetWrapper {
     private var _pressureLevel: RAMPressure = .normal
     
     private var width: CGFloat {
-        get { Constants.Widget.chartWidth(self.historyCount) }
+        get {
+            // the border is added around the chart rather than taken out of it,
+            // so the chart keeps exactly one device pixel per read either way
+            let border = self.boxState || self.frameState ? Constants.Widget.devicePixel*2 : 0
+            return Constants.Widget.chartWidth(self.historyCount) + border
+        }
     }
     private var historySliderView: NSView? = nil
     
@@ -210,12 +215,18 @@ public class LineChart: WidgetWrapper {
             self.chart.setTransparent(true)
         }
         
+        // the chart is filled, so it has to start on a whole device pixel:
+        // `offset` is half a pixel and only ever centres the 1px box stroke.
+        // Inset by the full stroke where there is a border, by nothing where
+        // there is not, so the baseline lands exactly on a pixel edge.
+        let inset: CGFloat = self.boxState || self.frameState ? lineWidth : 0
+        
         context.saveGState()
-        context.translateBy(x: x+offset+lineWidth, y: offset)
+        context.translateBy(x: x + inset, y: inset)
         
         let chartSize = NSSize(
-            width: box.bounds.width - (offset*2+lineWidth),
-            height: box.bounds.height - offset
+            width: self.width - (inset*2),
+            height: boxSize.height - (inset*2)
         )
         self.chart.setColor(color)
         self.chart.setFrameSize(chartSize)

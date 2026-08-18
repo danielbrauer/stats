@@ -173,15 +173,19 @@ public class BarChart: WidgetWrapper {
             box.fill()
         }
         
-        let widthForBarChart = box.bounds.width
-        let partitionMargin: CGFloat = 0.5
+        // bars are filled, so they start on a whole device pixel: `offset` is
+        // half a pixel and only ever centres the 1px box stroke. Inset by the
+        // full stroke where there is a border, by nothing where there is not.
+        let inset: CGFloat = self.boxState || self.frameState ? lineWidth : 0
+        let widthForBarChart = width - x - (Constants.Widget.margin.x*2) - (inset*2)
+        let partitionMargin: CGFloat = lineWidth
         let partitionsMargin: CGFloat = (CGFloat(value.count - 1)) * partitionMargin / CGFloat(value.count - 1)
         let partitionWidth: CGFloat = (widthForBarChart / CGFloat(value.count)) - CGFloat(partitionsMargin.isNaN ? 0 : partitionsMargin)
-        let maxPartitionHeight: CGFloat = box.bounds.height
+        let maxPartitionHeight: CGFloat = self.frame.size.height - (inset*2)
         
-        x += offset
+        x += inset
         for i in 0..<value.count {
-            var y = offset
+            var y = inset
             let stackHeight = maxPartitionHeight * CGFloat(value[i].reduce(0) { $0 + $1.value })
             for a in 0..<value[i].count {
                 let partitionValue = value[i][a]

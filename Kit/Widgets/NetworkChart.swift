@@ -24,7 +24,10 @@ public class NetworkChart: WidgetWrapper {
     private var points: [(Double, Double)] = Array(repeating: (0, 0), count: 60)
     
     private var width: CGFloat {
-        get { Constants.Widget.chartWidth(self.historyCount) }
+        get {
+            let border = self.boxState || self.frameState ? Constants.Widget.devicePixel*2 : 0
+            return Constants.Widget.chartWidth(self.historyCount) + border
+        }
     }
     private var historySliderView: NSView? = nil
     
@@ -74,6 +77,8 @@ public class NetworkChart: WidgetWrapper {
             }
             self.reverseOrderState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_reverseOrder", defaultValue: self.reverseOrderState)
         }
+        
+        self.points = Array(repeating: (0, 0), count: self.historyCount)
         
         if preview {
             var list: [(Double, Double)] = []
@@ -165,11 +170,14 @@ public class NetworkChart: WidgetWrapper {
         
         context.saveGState()
         
+        // whole device pixels: `offset` is half a pixel and only ever centres
+        // the box stroke, so it must not appear in a fill or a point position
+        let inset: CGFloat = boxState || frameState ? lineWidth : 0
         let chartFrame = NSRect(
-            x: x+offset+lineWidth,
-            y: offset,
-            width: box.bounds.width - (offset*2+lineWidth),
-            height: box.bounds.height - offset
+            x: x + inset,
+            y: inset,
+            width: originWidth - (inset*2),
+            height: boxSize.height - (inset*2)
         )
         var topMax: Double = (reverseOrderState ? points.map{ $0.1 }.max() : points.map{ $0.0 }.max()) ?? 0
         var bottomMax: Double = (reverseOrderState ? points.map{ $0.0 }.max() : points.map{ $0.1 }.max()) ?? 0
@@ -180,21 +188,31 @@ public class NetworkChart: WidgetWrapper {
             bottomMax = 1
         }
         
-        let zero: CGFloat = (chartFrame.height/2) + chartFrame.origin.y
-        let xRatio: CGFloat = (chartFrame.width + (lineWidth*3)) / CGFloat(points.count)
-        let xCenter: CGFloat = chartFrame.height/2 + chartFrame.origin.y
+        // n points are joined by n-1 intervals, so they span the chart exactly
+        // and every one of them lands on a whole device pixel
+        let xRatio: CGFloat = points.count > 1 ? chartFrame.width / CGFloat(points.count - 1) : 0
+        
+        // a 1px stroke is crisp when its centre sits half a pixel off the grid,
+        // so every line the chart can draw is placed half a stroke inside its
+        // edge. The centre line takes the middle row rather than the boundary
+        // between the two middle rows, which would split it over both.
+        let half: CGFloat = lineWidth/2
+        let rows: CGFloat = (chartFrame.height/lineWidth).rounded(.down)
+        let centre: CGFloat = chartFrame.minY + ((rows/2).rounded(.down) * lineWidth) + half
+        let topHeight: CGFloat = abs((chartFrame.maxY - half) - centre)
+        let bottomHeight: CGFloat = abs(centre - (chartFrame.minY + half))
         
         let columnXPoint = { (point: Int) -> CGFloat in
-            return (CGFloat(point) * xRatio) + (chartFrame.origin.x - lineWidth)
+            return chartFrame.minX + (CGFloat(point) * xRatio)
         }
         
         let topYPoint = { (point: Int) -> CGFloat in
             let value = reverseOrderState ? points[point].1 : points[point].0
-            return scaleValue(scale: scaleState, value: value, maxValue: topMax, zeroValue: 256.0, maxHeight: chartFrame.height/2, limit: 1) + xCenter
+            return centre + scaleValue(scale: scaleState, value: value, maxValue: topMax, zeroValue: 256.0, maxHeight: topHeight, limit: 1)
         }
         let bottomYPoint = { (point: Int) -> CGFloat in
             let value = reverseOrderState ? points[point].0 : points[point].1
-            return xCenter - scaleValue(scale: scaleState, value: value, maxValue: bottomMax, zeroValue: 256.0, maxHeight: chartFrame.height/2, limit: 1)
+            return centre - scaleValue(scale: scaleState, value: value, maxValue: bottomMax, zeroValue: 256.0, maxHeight: bottomHeight, limit: 1)
         }
         
         let topLinePath = NSBezierPath()
@@ -222,24 +240,24 @@ public class NetworkChart: WidgetWrapper {
         context.saveGState()
         
         guard let topUnderLinePath = topLinePath.copy() as? NSBezierPath else { return }
-        topUnderLinePath.line(to: CGPoint(x: columnXPoint(points.count - 1), y: zero))
-        topUnderLinePath.line(to: CGPoint(x: columnXPoint(0), y: zero))
+        topUnderLinePath.line(to: CGPoint(x: columnXPoint(points.count - 1), y: centre))
+        topUnderLinePath.line(to: CGPoint(x: columnXPoint(0), y: centre))
         topUnderLinePath.close()
         topUnderLinePath.addClip()
         bottomColor?.withAlphaComponent(0.5).setFill()
-        let topFillRect = NSRect(x: chartFrame.origin.x - lineWidth, y: chartFrame.origin.y, width: chartFrame.width + (lineWidth*3), height: chartFrame.height)
+        let topFillRect = chartFrame
         NSBezierPath(rect: topFillRect).fill()
         
         context.restoreGState()
         context.saveGState()
         
         guard let bottomUnderLinePath = bottomLinePath.copy() as? NSBezierPath else { return }
-        bottomUnderLinePath.line(to: CGPoint(x: columnXPoint(points.count - 1), y: zero))
-        bottomUnderLinePath.line(to: CGPoint(x: columnXPoint(0), y: zero))
+        bottomUnderLinePath.line(to: CGPoint(x: columnXPoint(points.count - 1), y: centre))
+        bottomUnderLinePath.line(to: CGPoint(x: columnXPoint(0), y: centre))
         bottomUnderLinePath.close()
         bottomUnderLinePath.addClip()
         topColor?.withAlphaComponent(0.5).setFill()
-        let bottomFillRect = NSRect(x: chartFrame.origin.x - lineWidth, y: chartFrame.origin.y, width: chartFrame.width + (lineWidth*3), height: chartFrame.height)
+        let bottomFillRect = chartFrame
         NSBezierPath(rect: bottomFillRect).fill()
         
         context.restoreGState()
