@@ -235,7 +235,10 @@ private class Popup: NSStackView, Popup_p {
     @objc private func reinit() {
         self.subviews.forEach({ $0.removeFromSuperview() })
         
-        let availableModules = modules.filter({ $0.enabled && $0.portal != nil })
+        // same order as the widgets in the menu bar, not the registration order
+        let availableModules = modules
+            .filter({ $0.enabled && $0.portal != nil })
+            .sorted(by: { $0.combinedPosition < $1.combinedPosition })
         var modulesHeight: CGFloat = 0
         availableModules.forEach { (m: Module) in
             if let p = m.portal {
