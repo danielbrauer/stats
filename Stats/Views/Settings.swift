@@ -130,9 +130,12 @@ class SettingsWindow: NSWindow, NSWindowDelegate, NSToolbarDelegate {
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         switch itemIdentifier {
         case .previewButton:
-            let button = SettingsPreviewButton { [weak self] in
-                guard let moduleName = self?.activeModuleName else { return }
-                NotificationCenter.default.post(name: .togglePreview, object: nil, userInfo: ["module": moduleName])
+            let button = SettingsPreviewButton {
+                NotificationCenter.default.post(
+                    name: .togglePreview,
+                    object: nil,
+                    userInfo: ["state": Constants.Settings.showModuleSettings]
+                )
             }
             self.settingsPreviewButton = button
             
@@ -557,7 +560,6 @@ private class SettingsPreviewButton: NSStackView {
     private var previewIcon: NSImage { iconFromSymbol(name: "command", scale: .large) }
     
     private var button: NSButton? = nil
-    private var isSettingsEnabled: Bool = false
     
     fileprivate init(callback: @escaping () -> Void) {
         self.callback = callback
@@ -574,11 +576,11 @@ private class SettingsPreviewButton: NSStackView {
         self.spacing = Constants.Settings.margin
         
         let button = NSButton()
-        button.toolTip = localizedString("Open module settings")
+        button.toolTip = localizedString(Constants.Settings.showModuleSettings ? "Close module settings" : "Open module settings")
         button.bezelStyle = .regularSquare
         button.translatesAutoresizingMaskIntoConstraints = false
         button.imageScaling = .scaleNone
-        button.image = self.settingsIcon
+        button.image = Constants.Settings.showModuleSettings ? self.previewIcon : self.settingsIcon
         button.contentTintColor = .secondaryLabelColor
         button.isBordered = false
         button.action = #selector(self.action)
@@ -596,11 +598,11 @@ private class SettingsPreviewButton: NSStackView {
     
     @objc private func action() {
         guard let button = self.button else { return }
+        
+        Constants.Settings.showModuleSettings = !Constants.Settings.showModuleSettings
         self.callback()
         
-        self.isSettingsEnabled = !self.isSettingsEnabled
-        
-        if self.isSettingsEnabled {
+        if Constants.Settings.showModuleSettings {
             button.image = self.previewIcon
             button.toolTip = localizedString("Close module settings")
         } else {

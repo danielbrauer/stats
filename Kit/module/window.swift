@@ -105,9 +105,9 @@ open class Window: NSStackView {
         self.addArrangedSubview(settingsView)
         
         if self.isPreviewAvailable, let previewView = self.preview() {
-            settingsView.isHidden = true
             self.addArrangedSubview(previewView)
             self.previewView = previewView
+            self.applyView(showSettings: Constants.Settings.showModuleSettings)
         }
         
         NotificationCenter.default.addObserver(self, selector: #selector(listenForOneView), name: .toggleOneView, object: nil)
@@ -337,17 +337,16 @@ open class Window: NSStackView {
     }
     
     @objc private func listenForToggleView(_ notification: Notification) {
-        guard let moduleName = notification.userInfo?["module"], self.config.name == moduleName as? String else { return }
-        self.toggleView()
+        guard let showSettings = notification.userInfo?["state"] as? Bool else { return }
+        self.applyView(showSettings: showSettings)
     }
     
-    private func toggleView() {
-        if let preview = self.previewView {
-            preview.isHidden = !preview.isHidden
-        }
-        if let settings = self.settingsView {
-            settings.isHidden = !settings.isHidden
-        }
+    // a module without a preview has nothing to switch to, so its settings
+    // must stay visible whatever the shared choice is
+    private func applyView(showSettings: Bool) {
+        guard self.isPreviewAvailable, let preview = self.previewView, let settings = self.settingsView else { return }
+        preview.isHidden = showSettings
+        settings.isHidden = !showSettings
     }
 }
 

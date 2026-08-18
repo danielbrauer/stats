@@ -26,6 +26,13 @@ public struct Settings_c_s {
     public let width: CGFloat = 540
     public let height: CGFloat = 480
     public let margin: CGFloat = 10
+    
+    // the preview/settings choice belongs to the settings window, not to a
+    // module, so switching modules keeps showing the same kind of view
+    public var showModuleSettings: Bool {
+        get { Store.shared.bool(key: "settings_showModuleSettings", defaultValue: false) }
+        nonmutating set { Store.shared.set(key: "settings_showModuleSettings", value: newValue) }
+    }
 }
 
 public struct Widget_c_s {
