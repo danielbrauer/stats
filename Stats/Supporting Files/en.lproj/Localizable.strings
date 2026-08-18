@@ -219,6 +219,10 @@
 "Label widget" = "Label";
 "Number of reads in the chart" = "Number of reads in the chart";
 "Width" = "Width";
+"Peak at center" = "Peak at center";
+"Fixed scale" = "Fixed scale";
+"Upload limit" = "Upload limit";
+"Download limit" = "Download limit";
 "Color of download" = "Color of download";
 "Color of upload" = "Color of upload";
 "Monospaced font" = "Monospaced font";

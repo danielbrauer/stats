@@ -21,6 +21,7 @@ public class NetworkChart: WidgetWrapper {
     private var scaleState: Scale = .linear
     private var reverseOrderState: Bool = false
     private var fixedScaleState: Bool = false
+    private var invertedState: Bool = false
     private var uploadLimit: Int = 10
     private var uploadLimitUnit: SizeUnit = .MB
     private var downloadLimit: Int = 10
@@ -86,6 +87,7 @@ public class NetworkChart: WidgetWrapper {
             }
             self.reverseOrderState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_reverseOrder", defaultValue: self.reverseOrderState)
             self.fixedScaleState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_fixedScale", defaultValue: self.fixedScaleState)
+            self.invertedState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_inverted", defaultValue: self.invertedState)
             self.uploadLimit = Store.shared.int(key: "\(self.title)_\(self.type.rawValue)_uploadLimit", defaultValue: self.uploadLimit)
             self.uploadLimitUnit = SizeUnit.fromString(Store.shared.string(key: "\(self.title)_\(self.type.rawValue)_uploadLimitUnit", defaultValue: self.uploadLimitUnit.key), defaultValue: .MB)
             self.downloadLimit = Store.shared.int(key: "\(self.title)_\(self.type.rawValue)_downloadLimit", defaultValue: self.downloadLimit)
@@ -132,6 +134,7 @@ public class NetworkChart: WidgetWrapper {
         var scaleState: Scale = .linear
         var reverseOrderState: Bool = false
         var fixedScaleState: Bool = false
+        var invertedState: Bool = false
         var uploadLimitBytes: Double = 0
         var downloadLimitBytes: Double = 0
         var originWidth: CGFloat = 0
@@ -145,6 +148,7 @@ public class NetworkChart: WidgetWrapper {
             frameState = self.frameState
             scaleState = self.scaleState
             fixedScaleState = self.fixedScaleState
+            invertedState = self.invertedState
             uploadLimitBytes = self.uploadLimitBytes
             downloadLimitBytes = self.downloadLimitBytes
             reverseOrderState = self.reverseOrderState
@@ -229,8 +233,15 @@ public class NetworkChart: WidgetWrapper {
         let half: CGFloat = lineWidth/2
         let rows: CGFloat = (chartFrame.height/lineWidth).rounded(.down)
         let centre: CGFloat = chartFrame.minY + ((rows/2).rounded(.down) * lineWidth) + half
-        let topHeight: CGFloat = abs((chartFrame.maxY - half) - centre)
-        let bottomHeight: CGFloat = abs(centre - (chartFrame.minY + half))
+        let outerTop: CGFloat = chartFrame.maxY - half
+        let outerBottom: CGFloat = chartFrame.minY + half
+        
+        // normally both halves grow away from the centre line; inverted, they
+        // hang from the outer edges and the ceiling is the centre line instead
+        let topBase: CGFloat = invertedState ? outerTop : centre
+        let bottomBase: CGFloat = invertedState ? outerBottom : centre
+        let topHeight: CGFloat = abs(outerTop - centre)
+        let bottomHeight: CGFloat = abs(centre - outerBottom)
         
         let columnXPoint = { (point: Int) -> CGFloat in
             return chartFrame.minX + (CGFloat(point) * xRatio)
@@ -238,11 +249,13 @@ public class NetworkChart: WidgetWrapper {
         
         let topYPoint = { (point: Int) -> CGFloat in
             let value = min(reverseOrderState ? points[point].1 : points[point].0, topMax)
-            return centre + scaleValue(scale: scaleState, value: value, maxValue: topMax, zeroValue: 256.0, maxHeight: topHeight, limit: 1)
+            let height = scaleValue(scale: scaleState, value: value, maxValue: topMax, zeroValue: 256.0, maxHeight: topHeight, limit: 1)
+            return invertedState ? topBase - height : topBase + height
         }
         let bottomYPoint = { (point: Int) -> CGFloat in
             let value = min(reverseOrderState ? points[point].0 : points[point].1, bottomMax)
-            return centre - scaleValue(scale: scaleState, value: value, maxValue: bottomMax, zeroValue: 256.0, maxHeight: bottomHeight, limit: 1)
+            let height = scaleValue(scale: scaleState, value: value, maxValue: bottomMax, zeroValue: 256.0, maxHeight: bottomHeight, limit: 1)
+            return invertedState ? bottomBase + height : bottomBase - height
         }
         
         let topLinePath = NSBezierPath()
@@ -270,8 +283,8 @@ public class NetworkChart: WidgetWrapper {
         context.saveGState()
         
         guard let topUnderLinePath = topLinePath.copy() as? NSBezierPath else { return }
-        topUnderLinePath.line(to: CGPoint(x: columnXPoint(points.count - 1), y: centre))
-        topUnderLinePath.line(to: CGPoint(x: columnXPoint(0), y: centre))
+        topUnderLinePath.line(to: CGPoint(x: columnXPoint(points.count - 1), y: topBase))
+        topUnderLinePath.line(to: CGPoint(x: columnXPoint(0), y: topBase))
         topUnderLinePath.close()
         topUnderLinePath.addClip()
         bottomColor?.withAlphaComponent(0.5).setFill()
@@ -282,8 +295,8 @@ public class NetworkChart: WidgetWrapper {
         context.saveGState()
         
         guard let bottomUnderLinePath = bottomLinePath.copy() as? NSBezierPath else { return }
-        bottomUnderLinePath.line(to: CGPoint(x: columnXPoint(points.count - 1), y: centre))
-        bottomUnderLinePath.line(to: CGPoint(x: columnXPoint(0), y: centre))
+        bottomUnderLinePath.line(to: CGPoint(x: columnXPoint(points.count - 1), y: bottomBase))
+        bottomUnderLinePath.line(to: CGPoint(x: columnXPoint(0), y: bottomBase))
         bottomUnderLinePath.close()
         bottomUnderLinePath.addClip()
         topColor?.withAlphaComponent(0.5).setFill()
@@ -365,6 +378,10 @@ public class NetworkChart: WidgetWrapper {
                 items: [Scale.linear, Scale.square, Scale.cube, Scale.logarithmic],
                 selected: self.scaleState.key
             )),
+            PreferencesRow(localizedString("Peak at center"), component: switchView(
+                action: #selector(self.toggleInverted),
+                state: self.invertedState
+            )),
             PreferencesRow(localizedString("Fixed scale"), component: switchView(
                 action: #selector(self.toggleFixedScale),
                 state: self.fixedScaleState
@@ -394,6 +411,13 @@ public class NetworkChart: WidgetWrapper {
         view.addArrangedSubview(limits)
         
         return view
+    }
+    
+    @objc private func toggleInverted(_ sender: NSControl) {
+        let state = controlState(sender)
+        self.queue.sync { self.invertedState = state }
+        Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_inverted", value: state)
+        self.display()
     }
     
     @objc private func toggleFixedScale(_ sender: NSControl) {
