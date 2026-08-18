@@ -101,6 +101,22 @@ public class Bluetooth: Module {
         )
         guard self.available else { return }
         
+        // the reader is built lazily: creating it spins up a CBCentralManager,
+        // which asks the user for the Bluetooth permission. A disabled module
+        // has no business asking for that, so wait until it is turned on.
+        if self.enabled {
+            self.setupReader()
+        }
+    }
+    
+    open override func enable() {
+        self.setupReader()
+        super.enable()
+    }
+    
+    private func setupReader() {
+        guard self.devicesReader == nil else { return }
+        
         self.devicesReader = DevicesReader { [weak self] value in
             self?.batteryCallback(value)
         }

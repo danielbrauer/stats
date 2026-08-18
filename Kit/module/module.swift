@@ -204,7 +204,7 @@ open class Module {
     open func willTerminate() {}
     
     // set module state to enabled
-    public func enable() {
+    open func enable() {
         guard self.available else { return }
         
         self.enabled = true
