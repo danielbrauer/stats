@@ -66,6 +66,12 @@ public class NetworkChart: WidgetWrapper {
             self.downloadColor = SColor.fromString(Store.shared.string(key: "\(self.title)_\(self.type.rawValue)_downloadColor", defaultValue: self.downloadColor.key))
             self.uploadColor = SColor.fromString(Store.shared.string(key: "\(self.title)_\(self.type.rawValue)_uploadColor", defaultValue: self.uploadColor.key))
             self.scaleState = Scale.fromString(Store.shared.string(key: "\(self.title)_\(self.type.rawValue)_scale", defaultValue: self.scaleState.key))
+            // `none` reads the raw byte count as a 0-1 fraction below 1 byte/s,
+            // so an idle link spikes on noise. It is not offered here any more
+            if self.scaleState == .none {
+                self.scaleState = .linear
+                Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_scale", value: self.scaleState.key)
+            }
             self.reverseOrderState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_reverseOrder", defaultValue: self.reverseOrderState)
         }
         
@@ -308,7 +314,7 @@ public class NetworkChart: WidgetWrapper {
             PreferencesRow(localizedString("Width"), component: historySlider),
             PreferencesRow(localizedString("Scaling"), component: selectView(
                 action: #selector(self.toggleScale),
-                items: Scale.allCases.filter({ $0 != .fixed }),
+                items: [Scale.linear, Scale.square, Scale.cube, Scale.logarithmic],
                 selected: self.scaleState.key
             ))
         ]))
