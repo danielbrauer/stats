@@ -390,7 +390,21 @@ public class LineChartView: ChartView {
             path.line(to: CGPoint(x: rightEdge, y: last.y))
             lineColor.set()
             path.lineWidth = offset
+            // a stroke is centred on its path, so the line at either end of the
+            // chart reaches half a stroke past the reading it stands for. Hold
+            // it inside the chart, whatever the joins and the antialiasing do
+            // with it. The fill below closes on the chart's own edges and is
+            // left alone: a clip is antialiased too, and would soften an edge
+            // that already lands on the pixel
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath(rect: NSRect(
+                x: yLegendWidth,
+                y: xLegendHeight,
+                width: chartWidth,
+                height: self.frame.height - xLegendHeight
+            )).setClip()
             path.stroke()
+            NSGraphicsContext.restoreGraphicsState()
 
             path = path.copy() as! NSBezierPath
             path.line(to: CGPoint(x: rightEdge, y: zero))

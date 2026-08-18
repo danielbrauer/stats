@@ -219,6 +219,13 @@ public class NetworkChart: WidgetWrapper {
             width: originWidth - (inset*2),
             height: boxSize.height - (inset*2)
         )
+        // a stroke is centred on its path, so the line at either end of the
+        // chart reaches half a stroke past the reading it stands for. Hold the
+        // strokes inside the chart, whatever the joins and the antialiasing do
+        // with them. The fills close on the chart's own edges and are left
+        // alone: a clip is antialiased too, and would soften an edge that
+        // already lands on the pixel
+        context.clip(to: chartFrame)
         // a fixed ceiling makes the chart readable at a glance: without it the
         // scale is whatever the tallest sample in the window happens to be, so
         // the same height means a different speed from one moment to the next
