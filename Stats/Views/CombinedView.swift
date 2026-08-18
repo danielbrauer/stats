@@ -49,7 +49,8 @@ internal class CombinedView: NSObject, NSGestureRecognizerDelegate {
             }
         }
         
-        self.popup = PopupWindow(title: "Combined modules", module: .combined, view: Popup()) { _ in }
+        // no title in the header: every portal already carries its own
+        self.popup = PopupWindow(title: "", module: .combined, view: Popup()) { _ in }
         
         if self.status {
             self.enable()
