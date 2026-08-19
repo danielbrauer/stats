@@ -197,6 +197,10 @@ public class LineChartView: ChartView {
     
     private var points: [DoubleValue?]
     private var head: Int = 0
+    // a reading told apart into the parts it is made of, one ring to a part,
+    // sharing the head with the whole above
+    private var stack: [[DoubleValue?]] = []
+    private var stackColors: [NSColor] = []
     private var shadowPoints: [DoubleValue?] = []
     private var transparent: Bool = true
     private var flipY: Bool = false
@@ -297,6 +301,17 @@ public class LineChartView: ChartView {
         let points = stop ? shadowPoints : originalPoints
         guard let context = NSGraphicsContext.current?.cgContext, !points.isEmpty else { return }
         context.setShouldAntialias(true)
+        
+        var stack: [[DoubleValue?]] = []
+        var stackColors: [NSColor] = []
+        self.read {
+            stack = self.stack.map { self.orderedLocked($0) }
+            stackColors = self.stackColors
+        }
+        if !stack.isEmpty, stack.count == stackColors.count {
+            self.drawStack(stack, colors: stackColors, scale: scale, fixedScale: fixedScale, zeroValue: zeroValue)
+            return
+        }
         var maxValue: Double = 0
         for opt in points {
             if let p = opt, p.value > maxValue { maxValue = p.value }
@@ -621,12 +636,16 @@ public class LineChartView: ChartView {
     }
     
     private func orderedPointsLocked() -> [DoubleValue?] {
-        let n = self.points.count
+        self.orderedLocked(self.points)
+    }
+    
+    private func orderedLocked(_ ring: [DoubleValue?]) -> [DoubleValue?] {
+        let n = ring.count
         guard n > 0 else { return [] }
         var result: [DoubleValue?] = []
         result.reserveCapacity(n)
         for i in 0..<n {
-            result.append(self.points[(self.head + i) % n])
+            result.append(ring[(self.head + i) % n])
         }
         return result
     }
@@ -658,9 +677,159 @@ public class LineChartView: ChartView {
         self.addValue(DoubleValue(value))
     }
     
+    // one reading per part, stacked in the order they are given: the first
+    // sits on the floor of the chart and the rest ride on top of it
+    public func addValues(_ values: [ColorValue]) {
+        self.write {
+            let n = self.points.count
+            guard n > 0, !values.isEmpty else { return }
+            
+            if self.stack.count != values.count || self.stack.first?.count != n {
+                self.stack = Array(repeating: Array(repeating: nil, count: n), count: values.count)
+            }
+            self.stackColors = values.map { $0.color ?? .controlAccentColor }
+            for (i, value) in values.enumerated() {
+                self.stack[i][self.head] = DoubleValue(value.value)
+            }
+            
+            self.points[self.head] = DoubleValue(values.reduce(0) { $0 + $1.value })
+            self.head = (self.head + 1) % n
+        }
+        self.displayIfVisible()
+    }
+    
+    public func clearStack() {
+        guard self.read({ !self.stack.isEmpty }) else { return }
+        self.write {
+            self.stack = []
+            self.stackColors = []
+        }
+        self.displayIfVisible()
+    }
+    
+    // the parts are drawn solid, from the top down so each covers the one
+    // below, into an image of their own, and the whole image is faded once
+    // afterwards. Drawn straight onto the chart instead, a part carrying any
+    // transparency would show the part beneath it through itself, and the
+    // colours would mix into ones neither part ever had
+    private func drawStack(_ stack: [[DoubleValue?]], colors: [NSColor], scale: Scale, fixedScale: Double, zeroValue: Double) {
+        let count = stack.first?.count ?? 0
+        guard count > 0, let context = NSGraphicsContext.current?.cgContext else { return }
+        
+        let pixel = 1 / (NSScreen.main?.backingScaleFactor ?? 1)
+        let width = self.frame.width
+        let height = self.frame.height - pixel/2
+        let columnWidth = width / CGFloat(count)
+        
+        let density = NSScreen.main?.backingScaleFactor ?? 2
+        guard width > 0, height > 0, let buffer = CGContext(
+            data: nil,
+            width: Int((width*density).rounded(.up)),
+            height: Int((self.frame.height*density).rounded(.up)),
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return }
+        buffer.scaleBy(x: density, y: density)
+        buffer.setShouldAntialias(true)
+        
+        var totals: [[Double?]] = []
+        for (i, layer) in stack.enumerated() {
+            totals.append((0..<count).map { column in
+                guard let value = layer[column]?.value,
+                      let below = i == 0 ? 0 : totals[i-1][column] else { return nil }
+                return below + value
+            })
+        }
+        
+        for i in stride(from: totals.count-1, through: 0, by: -1) {
+            let color = (i < colors.count ? colors[i] : NSColor.controlAccentColor)
+            let cgColor = (color.usingColorSpace(.deviceRGB) ?? color).cgColor
+            var run: [CGPoint] = []
+            var start: Int = 0
+            
+            func fill(_ end: Int) {
+                guard let first = run.first, let last = run.last else { return }
+                // the readings at either end hold their half column out to the
+                // border, as the plain chart's line does
+                let left = start == 0 ? 0 : first.x
+                let right = end == count-1 ? width : last.x
+                
+                // the top of the band, which is stroked as a line of its own
+                let edge = CGMutablePath()
+                edge.move(to: CGPoint(x: left, y: first.y))
+                run.forEach { edge.addLine(to: $0) }
+                edge.addLine(to: CGPoint(x: right, y: last.y))
+                
+                let area = CGMutablePath()
+                area.move(to: CGPoint(x: left, y: 0))
+                area.addLine(to: CGPoint(x: left, y: first.y))
+                run.forEach { area.addLine(to: $0) }
+                area.addLine(to: CGPoint(x: right, y: last.y))
+                area.addLine(to: CGPoint(x: right, y: 0))
+                area.closeSubpath()
+                
+                buffer.setFillColor(cgColor)
+                buffer.addPath(area)
+                buffer.fillPath()
+                
+                buffer.setStrokeColor(cgColor)
+                buffer.setLineWidth(pixel)
+                buffer.addPath(edge)
+                buffer.strokePath()
+                
+                run = []
+            }
+            
+            for column in 0..<count {
+                guard let value = totals[i][column] else {
+                    fill(column-1)
+                    continue
+                }
+                if run.isEmpty { start = column }
+                run.append(CGPoint(
+                    x: (columnWidth/2) + CGFloat(column)*columnWidth,
+                    y: scaleValue(scale: scale, value: value, maxValue: 1, zeroValue: zeroValue, maxHeight: height, limit: fixedScale)
+                ))
+            }
+            fill(count-1)
+        }
+        
+        // one fade over the parts as they stand, the same ramp the plain chart
+        // fills under its line with: half way clear at the floor of the chart,
+        // solid at the top of it
+        buffer.setBlendMode(.destinationIn)
+        if let fade = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceGray(),
+            colors: [CGColor(gray: 0, alpha: 0.5), CGColor(gray: 0, alpha: 1)] as CFArray,
+            locations: [0, 1]
+        ) {
+            buffer.drawLinearGradient(
+                fade,
+                start: CGPoint(x: 0, y: 0),
+                end: CGPoint(x: 0, y: height),
+                options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
+            )
+        }
+        
+        if let image = buffer.makeImage() {
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: self.frame.height))
+        }
+    }
+    
     public func reinit(_ num: Int = 60) {
         self.write {
             guard self.points.count != num else { return }
+            self.stack = self.stack.map { ring in
+                let ordered = self.orderedLocked(ring)
+                if num < ordered.count {
+                    return Array(ordered.suffix(num))
+                }
+                var arr: [DoubleValue?] = Array(repeating: nil, count: num)
+                arr.replaceSubrange((num-ordered.count)..<num, with: ordered)
+                return arr
+            }
             let ordered = self.orderedPointsLocked()
             if num < ordered.count {
                 self.points = Array(ordered.suffix(num))

@@ -96,7 +96,7 @@ public class CPU: Module {
     }
     
     private var eCoresColor: NSColor {
-        let color = SColor.teal
+        let color = SColor.cyan
         let key = Store.shared.string(key: "\(self.config.name)_eCoresColor", defaultValue: color.key)
         if let c = SColor.fromString(key).additional as? NSColor {
             return c
@@ -193,6 +193,29 @@ public class CPU: Module {
         ])
     }
     
+    // each cluster's usage as a share of the whole chip: the average across
+    // the cores in it, weighted by how many of the chip's cores those are
+    private func clusterShares(_ value: CPU_Load) -> [ColorValue] {
+        let cores = SystemKit.shared.device.info.cpu?.cores ?? []
+        guard !cores.isEmpty else { return [] }
+        let total = Double(cores.count)
+        
+        var shares: [ColorValue] = []
+        let clusters: [(usage: Double?, type: coreType, color: NSColor)] = [
+            (value.usageECores, .efficiency, self.eCoresColor),
+            (value.usagePCores, .performance, self.pCoresColor),
+            (value.usageSCores, .super, self.sCoresColor)
+        ]
+        for cluster in clusters {
+            guard let usage = cluster.usage else { continue }
+            let count = Double(cores.filter({ $0.type == cluster.type }).count)
+            guard count > 0 else { continue }
+            shares.append(ColorValue(usage * (count/total), color: cluster.color))
+        }
+        
+        return shares
+    }
+    
     private func loadCallback(_ raw: CPU_Load?) {
         guard let value = raw, self.enabled else { return }
         
@@ -204,7 +227,15 @@ public class CPU: Module {
         self.menuBar.widgets.filter{ $0.isActive }.forEach { [self] (w: SWidget) in
             switch w.item {
             case let widget as Mini: widget.setValue(value.totalUsage)
-            case let widget as LineChart: widget.setValue(value.totalUsage)
+            case let widget as LineChart:
+                // every core is worth the same share of the chart, so a
+                // cluster stands as tall as the cores in it are busy
+                let clusters: [ColorValue] = self.clusterShares(value)
+                if widget.colorState == .cluster, !clusters.isEmpty {
+                    widget.setValues(clusters)
+                } else {
+                    widget.setValue(value.totalUsage)
+                }
             case let widget as BarChart:
                 var val: [[ColorValue]] = [[ColorValue(value.totalUsage)]]
                 let cores = SystemKit.shared.device.info.cpu?.cores ?? []

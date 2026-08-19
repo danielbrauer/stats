@@ -17,7 +17,7 @@ public class LineChart: WidgetWrapper {
     private var frameState: Bool = false
     private var valueState: Bool = false
     private var valueColorState: Bool = false
-    private var colorState: SColor = .systemAccent
+    public var colorState: SColor = .systemAccent
     public private(set) var historyCount: Int = 60
     private var scaleState: Scale = .none
     
@@ -294,6 +294,26 @@ public class LineChart: WidgetWrapper {
         self.queue.sync {
             self._colorFunc = newColorFunc
         }
+    }
+    
+    // a reading that comes in parts, drawn stacked while the chart is set to
+    // colour by cluster and added up into the one line otherwise
+    public func setValues(_ values: [ColorValue]) {
+        let total = values.reduce(0) { $0 + $1.value }
+        self.queue.sync {
+            self._value = total
+        }
+        
+        if self.colorState == .cluster {
+            self.chart.addValues(values)
+        } else {
+            self.chart.clearStack()
+            self.chart.addValue(total)
+        }
+        
+        DispatchQueue.main.async(execute: {
+            self.needsDisplay = true
+        })
     }
     
     public func setPressure(_ newPressureLevel: RAMPressure) {
