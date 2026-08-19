@@ -208,15 +208,10 @@ open class Window: NSStackView {
         let moduleTab: NSTabViewItem = NSTabViewItem()
         moduleTab.label = localizedString("Module")
         moduleTab.view = {
-            let container = NSStackView()
-            container.translatesAutoresizingMaskIntoConstraints = false
-            
-            let scrollView = ScrollableStackView()
-            self.moduleSettingsContainer = scrollView.stackView
+            let view = ScrollableStackView(frame: tabView.frame)
+            self.moduleSettingsContainer = view.stackView
             self.loadModuleSettings()
-            
-            container.addArrangedSubview(scrollView)
-            return container
+            return view
         }()
         tabView.addTabViewItem(moduleTab)
         
