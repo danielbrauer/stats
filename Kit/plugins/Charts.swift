@@ -168,16 +168,6 @@ public class ChartView: NSView {
         self.layer?.add(transition, forKey: kCATransition)
     }
     
-    fileprivate func slideTransition(_ dx: CGFloat, duration: CFTimeInterval) {
-        guard dx != 0 else { return }
-        let animation = CABasicAnimation(keyPath: "transform.translation.x")
-        animation.fromValue = dx
-        animation.toValue = 0
-        animation.duration = duration
-        animation.timingFunction = CAMediaTimingFunction(name: .linear)
-        self.layer?.add(animation, forKey: "slide")
-    }
-    
     fileprivate func fadeOrDisplay() {
         self.onMain { [weak self] in
             guard let self, self.window?.isVisible ?? false else { return }
@@ -219,7 +209,6 @@ public class LineChartView: ChartView {
     
     private var cursor: NSPoint? = nil
     private var stop: Bool = false
-    private var lastSlideAt: CFTimeInterval = 0
     
     private var tooltipEnabledSnapshot: Bool {
         self.read { self.isTooltipEnabled }
@@ -616,23 +605,9 @@ public class LineChartView: ChartView {
             self.points[self.head] = value
             self.head = (self.head + 1) % n
         }
-        self.onMain { [weak self] in
-            guard let self, self.window?.isVisible ?? false else { return }
-            let state = self.read { (n: self.points.count, yLegend: self.yLegend) }
-            let dx = state.n > 1 ? (self.bounds.width - (state.yLegend ? 30 : 0)) / CGFloat(state.n - 1) : 0
-            guard dx >= 1, !self.stop, self.animationsAllowed else {
-                self.needsDisplay = true
-                return
-            }
-            let now = CACurrentMediaTime()
-            let dt = self.lastSlideAt == 0 ? self.animationDuration : now - self.lastSlideAt
-            self.lastSlideAt = now
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            self.slideTransition(dx, duration: min(max(dt, 0.1), 1.0))
-            self.display()
-            CATransaction.commit()
-        }
+        // redraw in place: sliding the whole layer also moved the min/max label, legends
+        // and chart edges by one step on every update, which looked like a wobble
+        self.displayIfVisible()
     }
     
     private func orderedPointsLocked() -> [DoubleValue?] {
@@ -840,10 +815,7 @@ public class LineChartView: ChartView {
             }
             self.head = 0
         }
-        self.onMain { [weak self] in
-            self?.layer?.removeAnimation(forKey: "slide")
-            self?.displayIfVisible()
-        }
+        self.displayIfVisible()
     }
     
     public func setScale(_ newScale: Scale, fixedScale: Double = 1) {
@@ -862,10 +834,7 @@ public class LineChartView: ChartView {
             self.points = newPoints
             self.head = 0
         }
-        self.onMain { [weak self] in
-            self?.layer?.removeAnimation(forKey: "slide")
-            self?.displayIfVisible()
-        }
+        self.displayIfVisible()
     }
     
     public func setColor(_ newColor: NSColor) {

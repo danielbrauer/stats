@@ -125,6 +125,10 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
         get { Store.shared.string(key: "Network_reader", defaultValue: "interface") }
     }
     
+    private var allInterfaces: Bool {
+        get { Store.shared.bool(key: "Network_allInterfaces", defaultValue: false) }
+    }
+    
     private var vpnConnection: Bool {
         if let settings = CFNetworkCopySystemProxySettings()?.takeRetainedValue() as? [String: Any], let scopes = settings["__SCOPED__"] as? [String: Any] {
             return !scopes.filter({ $0.key.contains("tap") || $0.key.contains("tun") || $0.key.contains("ppp") || $0.key.contains("ipsec") || $0.key.contains("ipsec0")}).isEmpty
@@ -220,7 +224,10 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
         self.requestDetails()
         
         let current: Bandwidth
-        if self.reader == "interface" {
+        if self.reader == "interface" && self.allInterfaces {
+            self.readInterfaceStatus()
+            current = self.readAllInterfacesBandwidth()
+        } else if self.reader == "interface" {
             current = self.readInterfaceBandwidth()
         } else {
             self.readInterfaceStatus()
@@ -241,7 +248,7 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
         // drop one-shot counter jumps (e.g. on reconnect) that exceed what the link can physically deliver
         let interval = self.interval ?? 1
         let maxDelta: Int64 = {
-            if let rate = self.usage.interface?.transmitRate, rate > 0, rate < Double(UInt32.max) / 1_000_000 {
+            if !(self.reader == "interface" && self.allInterfaces), let rate = self.usage.interface?.transmitRate, rate > 0, rate < Double(UInt32.max) / 1_000_000 {
                 return Int64(rate * 1_000_000 / 8 * 1.5 * interval) // 50% headroom over negotiated link rate
             }
             return Int64(12_500_000_000 * interval) // 100 Gbps fallback when link rate is unknown or saturated at the 32-bit ifi_baudrate limit
@@ -570,6 +577,43 @@ internal class UsageReader: Reader<Network_Usage>, CWEventDelegate {
         }
         
         return nil
+    }
+    
+    // sums traffic of all active physical (en*) interfaces, e.g. Wi-Fi and Ethernet used at the same time
+    private func readAllInterfacesBandwidth() -> Bandwidth {
+        var mib: [Int32] = [CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0]
+        var size: size_t = 0
+        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return Bandwidth() }
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, u_int(mib.count), &buffer, &size, nil, 0) == 0 else { return Bandwidth() }
+        
+        var result = Bandwidth()
+        var name = [CChar](repeating: 0, count: Int(IF_NAMESIZE))
+        var offset = 0
+        while offset + MemoryLayout<if_msghdr>.size <= size {
+            var header = if_msghdr()
+            buffer.withUnsafeBytes { src in
+                _ = memcpy(&header, src.baseAddress?.advanced(by: offset), MemoryLayout<if_msghdr>.size)
+            }
+            guard header.ifm_msglen > 0 else { break }
+            
+            if Int32(header.ifm_type) == RTM_IFINFO2, offset + MemoryLayout<if_msghdr2>.size <= size {
+                var header2 = if_msghdr2()
+                buffer.withUnsafeBytes { src in
+                    _ = memcpy(&header2, src.baseAddress?.advanced(by: offset), MemoryLayout<if_msghdr2>.size)
+                }
+                let flags = header2.ifm_flags
+                if flags & IFF_UP != 0, flags & IFF_LOOPBACK == 0,
+                   if_indextoname(UInt32(header2.ifm_index), &name) != nil,
+                   String(cString: name).hasPrefix("en") {
+                    result.upload += Int64(clamping: header2.ifm_data.ifi_obytes)
+                    result.download += Int64(clamping: header2.ifm_data.ifi_ibytes)
+                }
+            }
+            
+            offset += Int(header.ifm_msglen)
+        }
+        return result
     }
     
     private func isIPv4(_ ip: String) -> Bool {

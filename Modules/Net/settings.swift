@@ -155,6 +155,10 @@ internal class Settings: NSStackView, Settings_v, NSTextFieldDelegate {
         autodetection.identifier = NSUserInterfaceItemIdentifier(rawValue: "autodetection")
         autodetection.tag = 128
         menu.addItem(autodetection)
+        let allInterfaces = NSMenuItem(title: localizedString("All interfaces"), action: nil, keyEquivalent: "")
+        allInterfaces.identifier = NSUserInterfaceItemIdentifier(rawValue: "all")
+        allInterfaces.tag = 129
+        menu.addItem(allInterfaces)
         menu.addItem(NSMenuItem.separator())
         self.list.forEach { (interface: Network_interface) in
             let interfaceMenu = NSMenuItem(title: "\(interface.displayName) (\(interface.BSDName))", action: nil, keyEquivalent: "")
@@ -166,7 +170,9 @@ internal class Settings: NSStackView, Settings_v, NSTextFieldDelegate {
         }
         interfaces.menu = menu
         interfaces.sizeToFit()
-        if selectedInterface == "" {
+        if Store.shared.bool(key: "\(self.title)_allInterfaces", defaultValue: false) {
+            interfaces.selectItem(withTag: 129)
+        } else if selectedInterface == "" {
             interfaces.selectItem(withTag: 128)
         }
         
@@ -282,7 +288,8 @@ internal class Settings: NSStackView, Settings_v, NSTextFieldDelegate {
     @objc private func handleSelection(_ sender: NSPopUpButton) {
         guard let item = sender.selectedItem, let id = item.identifier?.rawValue else { return }
         
-        if id == "autodetection" {
+        Store.shared.set(key: "\(self.title)_allInterfaces", value: id == "all")
+        if id == "autodetection" || id == "all" {
             Store.shared.remove("\(self.title)_interface")
         } else {
             if let bsdName = item.identifier?.rawValue {
