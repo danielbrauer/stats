@@ -80,7 +80,9 @@ extension AppDelegate {
         }
         
         if !Store.shared.exist(key: key) {
-            Store.shared.reset()
+            // Fork: never wipe settings here. A missing "version" key can also mean the
+            // preferences were unreadable at launch (e.g. after a re-signed build), and
+            // resetting then destroys every setting the user has.
             debug("Previous version not detected. Current version (\(currentVersion) set")
         } else {
             let prevVersion = Store.shared.string(key: key, defaultValue: "")
