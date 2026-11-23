@@ -8,7 +8,5 @@
 	<array>
 		<string>$(TeamIdentifierPrefix)eu.exelban.Stats.widgets</string>
 	</array>
-	<key>com.apple.security.cs.disable-library-validation</key>
-	<true/>
 </dict>
 </plist>

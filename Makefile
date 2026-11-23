@@ -7,7 +7,7 @@ ZIP_PATH = "$(BUILD_PATH)/$(APP).zip"
 WIDGET_PATH = "$(BUILD_PATH)/$(APP).app/Contents/PlugIns/WidgetsExtension.appex"
 
 .SILENT: archive notarize sign verify prepare-dmg prepare-dSYM clean next-version check history disk smc leveldb
-.PHONY: build archive notarize sign verify prepare-dmg prepare-dSYM clean next-version check history open smc leveldb
+.PHONY: build archive notarize sign verify prepare-dmg prepare-dSYM clean next-version check history open smc leveldb local
 
 build: clean next-version archive notarize sign verify prepare-dmg prepare-dSYM open
 
@@ -144,3 +144,16 @@ leveldb:
 	cd $(PWD)/leveldb-source/build && cmake -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -DCMAKE_BUILD_TYPE=Release .. && cmake --build .
 	cp $(PWD)/leveldb-source/build/libleveldb.a $(PWD)/Kit/lldb/libleveldb.a
 	rm -rf $(PWD)/leveldb-source
+# --- PERSONAL FORK: local Developer ID build, installed to /Applications --- #
+LOCAL_DD = $(BUILD_PATH)/local
+local:
+	xcodebuild -project $(APP).xcodeproj -scheme $(APP) -configuration Release \
+		-derivedDataPath $(LOCAL_DD) \
+		CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=NXQ4NW9JP7 \
+		CODE_SIGN_IDENTITY="Developer ID Application" \
+		PROVISIONING_PROFILE_SPECIFIER="" OTHER_CODE_SIGN_FLAGS="--timestamp" build
+	codesign --verify --deep --strict $(LOCAL_DD)/Build/Products/Release/$(APP).app
+	-osascript -e 'quit app "$(APP)"'
+	sleep 2
+	ditto $(LOCAL_DD)/Build/Products/Release/$(APP).app /Applications/$(APP).app
+	open /Applications/$(APP).app
