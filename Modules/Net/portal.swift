@@ -94,7 +94,7 @@ public class Portal: PortalWrapper {
     
     private func chartView() -> NSView {
         let view = NSStackView()
-        view.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 5)
+        view.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
         
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.lightGray.withAlphaComponent(0.1).cgColor
