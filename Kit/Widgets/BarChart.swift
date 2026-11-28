@@ -19,6 +19,7 @@ public class BarChart: WidgetWrapper {
     private var colors: [SColor] = SColor.allCases
     
     private var _value: [[ColorValue]] = [[]]
+    private var _performanceState: Double?
     private var _pressureLevel: RAMPressure = .normal
     private var _colorZones: colorZones = (0.6, 0.8)
     
@@ -70,12 +71,21 @@ public class BarChart: WidgetWrapper {
         ))
         
         self.canDrawConcurrently = true
+
+        #if arch(arm64)
+        if config?["Performance State Color"] as? Bool == true {
+            self.colors.insert(.performanceState, at: self.colors.firstIndex(of: .separator1) ?? 0)
+        }
+        #endif
         
         if !preview {
             self.boxState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_box", defaultValue: self.boxState)
             self.frameState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_frame", defaultValue: self.frameState)
             self.labelState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_label", defaultValue: self.labelState)
             self.colorState = SColor.fromString(Store.shared.string(key: "\(self.title)_\(self.type.rawValue)_color", defaultValue: self.colorState.key))
+            if self.colorState == .performanceState && !self.colors.contains(.performanceState) {
+                self.colorState = .systemAccent
+            }
         }
         
         if preview {
@@ -116,10 +126,12 @@ public class BarChart: WidgetWrapper {
         super.draw(dirtyRect)
         
         var value: [[ColorValue]] = []
+        var performanceState: Double?
         var pressureLevel: RAMPressure = .normal
         var colorZones: colorZones = (0.6, 0.8)
         self.queue.sync {
             value = self._value
+            performanceState = self._performanceState
             pressureLevel = self._pressureLevel
             colorZones = self._colorZones
         }
@@ -209,7 +221,9 @@ public class BarChart: WidgetWrapper {
                 let partition = NSBezierPath(rect: NSRect(x: x, y: y, width: partitionWidth, height: partitionHeight))
                 
                 var color: NSColor
-                if let partitionColor = partitionValue.color {
+                if self.colorState == .performanceState {
+                    color = SColor.performanceStateColor(performanceState)
+                } else if let partitionColor = partitionValue.color {
                     color = partitionColor
                 } else {
                     switch self.colorState {
@@ -261,7 +275,7 @@ public class BarChart: WidgetWrapper {
         self.setWidth(width)
     }
     
-    public func setValue(_ newValue: [[ColorValue]]) {
+    public func setValue(_ newValue: [[ColorValue]], performanceState: Double? = nil) {
         let updated = self.queue.sync { () -> Bool in
             let tolerance: CGFloat = 0.01
             let isDifferent = self._value.count != newValue.count || zip(self._value, newValue).contains { row1, row2 in
@@ -269,7 +283,10 @@ public class BarChart: WidgetWrapper {
                     abs(val1.value - val2.value) > tolerance || val1.color != val2.color
                 }
             }
-            guard isDifferent else { return false }
+            let stateColorChanged = self.colorState == .performanceState &&
+                SColor.performanceStateColor(self._performanceState) != SColor.performanceStateColor(performanceState)
+            self._performanceState = performanceState
+            guard isDifferent || stateColorChanged else { return false }
             self._value = newValue
             return true
         }
@@ -316,16 +333,21 @@ public class BarChart: WidgetWrapper {
         )
         self.frameSettingsView = frame
         
+        let color = colorSelectView(
+            action: #selector(self.toggleColor),
+            items: self.colors,
+            selected: self.colorState.key
+        )
+        if self.colors.contains(.performanceState) {
+            color.toolTip = localizedString("Purple indicates lower performance states, and yellow indicates higher states. Blue indicates no reading.")
+        }
+
         view.addArrangedSubview(PreferencesSection([
             PreferencesRow(localizedString("Label"), component: switchView(
                 action: #selector(self.toggleLabel),
                 state: self.labelState
             )),
-            PreferencesRow(localizedString("Color"), component: colorSelectView(
-                action: #selector(self.toggleColor),
-                items: self.colors,
-                selected: self.colorState.key
-            )),
+            PreferencesRow(localizedString("Color"), component: color),
             PreferencesRow(localizedString("Box"), component: box),
             PreferencesRow(localizedString("Frame"), component: frame)
         ]))

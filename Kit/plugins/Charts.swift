@@ -196,6 +196,7 @@ public class LineChartView: ChartView {
     private var flipY: Bool = false
     private var minMax: Bool = false
     private var color: NSColor
+    private var performanceStateColoring = false
     private var suffix: String
     private var toolTipFunc: ((DoubleValue) -> String)?
     private var isTooltipEnabled: Bool = true
@@ -262,6 +263,7 @@ public class LineChartView: ChartView {
         var flipY: Bool = false
         var minMax: Bool = false
         var color: NSColor = .controlAccentColor
+        var performanceStateColoring = false
         var suffix: String = "%"
         var toolTipFunc: ((DoubleValue) -> String)?
         var isTooltipEnabled: Bool = true
@@ -277,6 +279,7 @@ public class LineChartView: ChartView {
             flipY = self.flipY
             minMax = self.minMax
             color = self.color
+            performanceStateColoring = self.performanceStateColoring
             suffix = self.suffix
             toolTipFunc = self.toolTipFunc
             isTooltipEnabled = self.isTooltipEnabled
@@ -371,7 +374,7 @@ public class LineChartView: ChartView {
         
         var path = NSBezierPath()
         for (start, linePoints) in lines {
-            if linePoints.count == 1 {
+            if !performanceStateColoring && linePoints.count == 1 {
                 path = NSBezierPath(ovalIn: CGRect(x: linePoints[0].x-offset, y: linePoints[0].y-offset, width: 1, height: 1))
                 lineColor.set()
                 path.stroke()
@@ -381,17 +384,58 @@ public class LineChartView: ChartView {
             }
 
             // the first and last reading hold their half column out to the
-            // border, so the line runs the full width and stops on the edge
+            // border. A lone reading fills its own column down to the baseline.
+            let first = linePoints[0]
             let last = linePoints[linePoints.count-1]
-            let leftEdge = start == 0 ? yLegendWidth : linePoints[0].x
-            let rightEdge = start + linePoints.count == points.count ? yLegendWidth + chartWidth : last.x
+            let halfColumn = linePoints.count == 1 ? columnWidth/2 : 0
+            let leftEdge = start == 0 ? yLegendWidth : first.x - halfColumn
+            let rightEdge = start + linePoints.count == points.count ? yLegendWidth + chartWidth : last.x + halfColumn
 
             path = NSBezierPath()
-            path.move(to: CGPoint(x: leftEdge, y: linePoints[0].y))
+            path.move(to: CGPoint(x: leftEdge, y: first.y))
             for i in 0..<linePoints.count {
                 path.line(to: linePoints[i])
             }
             path.line(to: CGPoint(x: rightEdge, y: last.y))
+            if performanceStateColoring {
+                let stroke = path
+                stroke.lineWidth = offset
+                let area = stroke.copy() as! NSBezierPath
+                area.line(to: CGPoint(x: rightEdge, y: zero))
+                area.line(to: CGPoint(x: leftEdge, y: zero))
+                area.close()
+
+                let end = start + linePoints.count
+                var column = start
+                while column < end {
+                    let color = SColor.performanceStateColor(points[column]?.performanceState)
+                    var next = column + 1
+                    while next < end && SColor.performanceStateColor(points[next]?.performanceState) == color {
+                        next += 1
+                    }
+
+                    // Keep the existing graph outline, with each sample owning its column.
+                    context.saveGState()
+                    context.clip(to: CGRect(
+                        x: yLegendWidth + CGFloat(column) * columnWidth,
+                        y: xLegendHeight,
+                        width: CGFloat(next - column) * columnWidth,
+                        height: self.frame.height - xLegendHeight
+                    ))
+                    color.setStroke()
+                    stroke.stroke()
+                    let fill = color.withAlphaComponent(transparent ? 0.5 : 0.8)
+                    if let gradient = NSGradient(colors: [fill.withAlphaComponent(0.5), fill.withAlphaComponent(1)]) {
+                        gradient.draw(in: area, angle: 90)
+                    } else {
+                        fill.setFill()
+                        area.fill()
+                    }
+                    context.restoreGState()
+                    column = next
+                }
+                continue
+            }
             lineColor.set()
             path.lineWidth = offset
             // a stroke is centred on its path, so the line at either end of the
@@ -654,7 +698,7 @@ public class LineChartView: ChartView {
     
     // one reading per part, stacked in the order they are given: the first
     // sits on the floor of the chart and the rest ride on top of it
-    public func addValues(_ values: [ColorValue]) {
+    public func addValues(_ values: [ColorValue], performanceState: Double? = nil) {
         self.write {
             let n = self.points.count
             guard n > 0, !values.isEmpty else { return }
@@ -667,7 +711,7 @@ public class LineChartView: ChartView {
                 self.stack[i][self.head] = DoubleValue(value.value)
             }
             
-            self.points[self.head] = DoubleValue(values.reduce(0) { $0 + $1.value })
+            self.points[self.head] = DoubleValue(values.reduce(0) { $0 + $1.value }, performanceState: performanceState)
             self.head = (self.head + 1) % n
         }
         self.displayIfVisible()
@@ -837,6 +881,11 @@ public class LineChartView: ChartView {
         self.displayIfVisible()
     }
     
+    func setPerformanceStateColoring(_ enabled: Bool) {
+        guard self.read({ self.performanceStateColoring }) != enabled else { return }
+        self.write { self.performanceStateColoring = enabled }
+    }
+
     public func setColor(_ newColor: NSColor) {
         guard self.read({ self.color }) != newColor else { return }
         self.write { self.color = newColor }

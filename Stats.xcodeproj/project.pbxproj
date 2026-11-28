@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AA00000000000000000000E2 /* PerformanceStateReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000E1 /* PerformanceStateReader.swift */; };
+		AA00000000000000000000E3 /* PerformanceStateReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000E1 /* PerformanceStateReader.swift */; };
 		4A05F9BD83C04F70BFFF7F37 /* Kit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 369463B2B7EA4AF0A895A9B6 /* Kit.swift */; };
 		5C038CF62D86EE8A00516809 /* SystemStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C038CF52D86EE8700516809 /* SystemStats.swift */; };
 		5C044F7A2B3DE6F3005F6951 /* portal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C044F792B3DE6F3005F6951 /* portal.swift */; };
@@ -530,6 +532,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		AA00000000000000000000E1 /* PerformanceStateReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PerformanceStateReader.swift; path = Modules/PerformanceStateReader.swift; sourceTree = SOURCE_ROOT; };
 		0192A7ED2B017E190056F918 /* hi */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = hi; path = hi.lproj/Localizable.strings; sourceTree = "<group>"; };
 		13BE56042D0E6963001C58EC /* en-AU */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en-AU"; path = "en-AU.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		2658929724FC0F3B00FB3B6A /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
@@ -1248,6 +1251,7 @@
 			isa = PBXGroup;
 			children = (
 				9A97CEE82537338600742D8F /* main.swift */,
+				AA00000000000000000000E1 /* PerformanceStateReader.swift */,
 				9A97CEF0253733D200742D8F /* readers.swift */,
 				9A97CEF5253733E400742D8F /* popup.swift */,
 				5C23BC0129A0102500DBA990 /* portal.swift */,
@@ -2305,6 +2309,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9A46C06B266D8602001A1117 /* smc.swift in Sources */,
+				AA00000000000000000000E3 /* PerformanceStateReader.swift in Sources */,
 				9A90E1A324EAD66600471E9A /* reader.swift in Sources */,
 				9A90E19624EAD35F00471E9A /* main.swift in Sources */,
 				5C0A9CA42C467F7A00EE6A89 /* widget.swift in Sources */,
@@ -2320,6 +2325,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA00000000000000000000E2 /* PerformanceStateReader.swift in Sources */,
 				9A97CEF1253733D200742D8F /* readers.swift in Sources */,
 				9A97CEF6253733E400742D8F /* popup.swift in Sources */,
 				5C4A1F5D2F6099AA009CFEE6 /* preview.swift in Sources */,

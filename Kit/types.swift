@@ -14,9 +14,11 @@ import Cocoa
 public struct DoubleValue {
     public var ts: Date = Date()
     public let value: Double
-    
-    public init(_ value: Double = 0) {
+    let performanceState: Double?
+
+    public init(_ value: Double = 0, performanceState: Double? = nil) {
         self.value = value
+        self.performanceState = performanceState
     }
 }
 
@@ -224,6 +226,41 @@ extension SColor: CaseIterable {
     public static var pressure: SColor { SColor(key: "pressure", value: "Based on pressure", additional: NSColor.black) }
     public static var cluster: SColor { SColor(key: "cluster", value: "Based on cluster", additional: NSColor.controlAccentColor) }
     
+    public static var performanceState: SColor {
+        SColor(key: "performanceState", value: "Based on performance state", additional: performanceStateColors[20])
+    }
+
+    private static let performanceStateColors: [NSColor] = {
+        let stops: [(red: Double, green: Double, blue: Double)] = [
+            (0.15, 0.03, 0.48),
+            (0.45, 0.04, 0.78),
+            (0.79, 0.05, 0.48),
+            (0.94, 0.12, 0.13),
+            (1.00, 0.34, 0.04),
+            (1.00, 0.64, 0.03),
+            (1.00, 0.90, 0.08)
+        ]
+        return (0...20).map { step in
+            let position = Double(step) * Double(stops.count - 1) / 20
+            let index = min(Int(position), stops.count - 2)
+            let fraction = position - Double(index)
+            let lower = stops[index]
+            let upper = stops[index + 1]
+            return NSColor(
+                srgbRed: lower.red + fraction * (upper.red - lower.red),
+                green: lower.green + fraction * (upper.green - lower.green),
+                blue: lower.blue + fraction * (upper.blue - lower.blue),
+                alpha: 1
+            )
+        }
+    }()
+
+    static func performanceStateColor(_ state: Double?) -> NSColor {
+        guard let state, state.isFinite else { return .systemBlue }
+        let index = Int((min(1, max(0, state)) * 20).rounded())
+        return self.performanceStateColors[index]
+    }
+
     public static var separator1: SColor { SColor(key: "separator_1", value: "separator_1", additional: NSColor.black) }
     
     public static var systemAccent: SColor { SColor(key: "system", value: "System accent", additional: NSColor.controlAccentColor) }
@@ -277,6 +314,7 @@ extension SColor: CaseIterable {
     }
     
     public static func fromString(_ key: String, defaultValue: SColor = .systemAccent) -> SColor {
+        if key == SColor.performanceState.key { return .performanceState }
         if let color = SColor.allCases.first(where: { $0.key == key }) {
             return color
         }

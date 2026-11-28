@@ -35,6 +35,8 @@
 		</dict>
 		<key>line_chart</key>
 		<dict>
+			<key>Performance State Color</key>
+			<true/>
 			<key>Default</key>
 			<false/>
 			<key>Color</key>
@@ -48,6 +50,8 @@
 		</dict>
 		<key>bar_chart</key>
 		<dict>
+			<key>Performance State Color</key>
+			<true/>
 			<key>Default</key>
 			<false/>
 			<key>Preview</key>

@@ -23,6 +23,7 @@ int64_t IOReportSimpleGetIntegerValue(CFDictionaryRef a, int32_t b);
 void IOReportMergeChannels(CFDictionaryRef a, CFDictionaryRef b, CFTypeRef null);
 IOReportSubscriptionRef IOReportCreateSubscription(void* a, CFMutableDictionaryRef b, CFMutableDictionaryRef* c, uint64_t d, CFTypeRef e);
 CFDictionaryRef IOReportCreateSamples(IOReportSubscriptionRef a, CFMutableDictionaryRef b, CFTypeRef c);
+CFDictionaryRef IOReportCreateSamplesDelta(CFDictionaryRef a, CFDictionaryRef b, CFTypeRef c);
 CFStringRef IOReportChannelGetGroup(CFDictionaryRef a);
 CFStringRef IOReportChannelGetSubGroup(CFDictionaryRef a);
 CFStringRef IOReportChannelGetChannelName(CFDictionaryRef a);

@@ -29,6 +29,7 @@ public class LineChart: WidgetWrapper {
     ), num: 60, animation: false)
     private var colors: [SColor] = SColor.allCases.filter({ $0 != SColor.cluster })
     private var _value: Double = 0
+    private var _performanceState: Double?
     private var _pressureLevel: RAMPressure = .normal
     private var _colorFunc: ((Double) -> NSColor)? = nil
     
@@ -81,6 +82,12 @@ public class LineChart: WidgetWrapper {
         ))
         
         self.canDrawConcurrently = true
+
+        #if arch(arm64)
+        if config?["Performance State Color"] as? Bool == true {
+            self.colors.insert(.performanceState, at: self.colors.firstIndex(of: .separator1) ?? 0)
+        }
+        #endif
         
         if !preview {
             self.boxState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_box", defaultValue: self.boxState)
@@ -89,6 +96,9 @@ public class LineChart: WidgetWrapper {
             self.labelState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_label", defaultValue: self.labelState)
             self.valueColorState = Store.shared.bool(key: "\(self.title)_\(self.type.rawValue)_valueColor", defaultValue: self.valueColorState)
             self.colorState = SColor.fromString(Store.shared.string(key: "\(self.title)_\(self.type.rawValue)_color", defaultValue: self.colorState.key))
+            if self.colorState == .performanceState && !self.colors.contains(.performanceState) {
+                self.colorState = .systemAccent
+            }
             self.historyCount = min(Constants.Widget.maxHistoryCount, max(
                 Constants.Widget.minHistoryCount,
                 Store.shared.int(key: "\(self.title)_\(self.type.rawValue)_historyCount", defaultValue: self.historyCount)
@@ -143,10 +153,12 @@ public class LineChart: WidgetWrapper {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         
         var value: Double = 0
+        var performanceState: Double?
         var pressureLevel: RAMPressure = .normal
         var colorFunc: ((Double) -> NSColor)? = nil
         self.queue.sync {
             value = self._value
+            performanceState = self._performanceState
             pressureLevel = self._pressureLevel
             colorFunc = self._colorFunc
         }
@@ -162,6 +174,7 @@ public class LineChart: WidgetWrapper {
         case .systemAccent: color = .controlAccentColor
         case .utilization: color = colorFunc?(value) ?? value.usageColor()
         case .pressure: color = pressureLevel.pressureColor()
+        case .performanceState: color = SColor.performanceStateColor(performanceState)
         case .monochrome:
             if self.boxState {
                 color = (isDarkMode ? NSColor.black : NSColor.white)
@@ -247,6 +260,7 @@ public class LineChart: WidgetWrapper {
             width: self.width - (inset*2),
             height: boxSize.height - (inset*2)
         )
+        self.chart.setPerformanceStateColoring(self.colorState == .performanceState)
         self.chart.setColor(color)
         self.chart.setFrameSize(chartSize)
         self.chart.draw(NSRect(origin: .zero, size: chartSize))
@@ -262,11 +276,12 @@ public class LineChart: WidgetWrapper {
         self.setWidth(width)
     }
     
-    public func setValue(_ newValue: Double) {
+    public func setValue(_ newValue: Double, performanceState: Double? = nil) {
         self.queue.sync {
             self._value = newValue
+            self._performanceState = performanceState
         }
-        self.chart.addValue(newValue)
+        self.chart.addValue(DoubleValue(newValue, performanceState: performanceState))
         DispatchQueue.main.async(execute: {
             self.needsDisplay = true
         })
@@ -298,17 +313,18 @@ public class LineChart: WidgetWrapper {
     
     // a reading that comes in parts, drawn stacked while the chart is set to
     // colour by cluster and added up into the one line otherwise
-    public func setValues(_ values: [ColorValue]) {
+    public func setValues(_ values: [ColorValue], performanceState: Double? = nil) {
         let total = values.reduce(0) { $0 + $1.value }
         self.queue.sync {
             self._value = total
+            self._performanceState = performanceState
         }
         
         if self.colorState == .cluster {
-            self.chart.addValues(values)
+            self.chart.addValues(values, performanceState: performanceState)
         } else {
             self.chart.clearStack()
-            self.chart.addValue(total)
+            self.chart.addValue(DoubleValue(total, performanceState: performanceState))
         }
         
         DispatchQueue.main.async(execute: {
@@ -353,6 +369,15 @@ public class LineChart: WidgetWrapper {
         )
         self.historySliderView = historySlider
         
+        let color = colorSelectView(
+            action: #selector(self.toggleColor),
+            items: self.colors,
+            selected: self.colorState.key
+        )
+        if self.colors.contains(.performanceState) {
+            color.toolTip = localizedString("Purple indicates lower performance states, and yellow indicates higher states. Blue indicates no reading.")
+        }
+
         view.addArrangedSubview(PreferencesSection([
             PreferencesRow(localizedString("Label"), component: switchView(
                 action: #selector(self.toggleLabel),
@@ -364,11 +389,7 @@ public class LineChart: WidgetWrapper {
             )),
             PreferencesRow(localizedString("Box"), component: box),
             PreferencesRow(localizedString("Frame"), component: frame),
-            PreferencesRow(localizedString("Color"), component: colorSelectView(
-                action: #selector(self.toggleColor),
-                items: self.colors,
-                selected: self.colorState.key
-            )),
+            PreferencesRow(localizedString("Color"), component: color),
             PreferencesRow(localizedString("Colorize value"), component: switchView(
                 action: #selector(self.toggleValueColor),
                 state: self.valueColorState
@@ -424,7 +445,11 @@ public class LineChart: WidgetWrapper {
     
     @objc private func toggleColor(_ sender: NSMenuItem) {
         guard let key = sender.representedObject as? String else { return }
-        self.colorState = SColor.fromString(key, defaultValue: self.colorState)
+        let previous = self.colorState
+        self.colorState = SColor.fromString(key, defaultValue: previous)
+        if previous == .cluster && self.colorState != .cluster {
+            self.chart.clearStack()
+        }
         Store.shared.set(key: "\(self.title)_\(self.type.rawValue)_color", value: self.colorState.key)
         self.needsDisplay = true
     }

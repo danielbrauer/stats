@@ -68,6 +68,15 @@ public class CPU: Module {
     private var frequencyReader: FrequencyReader? = nil
     private var limitReader: LimitReader? = nil
     private var averageLoadReader: AverageLoadReader? = nil
+
+    #if arch(arm64)
+    private let performanceStateReader = PerformanceStateReader(
+        group: "CPU Stats",
+        subgroup: "CPU Complex Performance States"
+    ) { name in
+        ["ECPU", "MCPU", "PCPU"].contains(String(name.prefix(4))) && name.dropFirst(4).allSatisfy { $0.isNumber }
+    }
+    #endif
     
     private var usagePerCoreState: Bool {
         Store.shared.bool(key: "\(self.config.name)_usagePerCore", defaultValue: false)
@@ -224,7 +233,20 @@ public class CPU: Module {
         self.notificationsView.loadCallback(value)
         self.previewView.loadCallback(value)
         
-        self.menuBar.widgets.filter{ $0.isActive }.forEach { [self] (w: SWidget) in
+        let widgets = self.menuBar.widgets.filter { $0.isActive }
+        let performanceState: Double?
+        #if arch(arm64)
+        if widgets.contains(where: { $0.item is LineChart || $0.item is BarChart }) {
+            performanceState = self.performanceStateReader?.read(interval: self.loadReader?.interval ?? 1)
+        } else {
+            self.performanceStateReader?.reset()
+            performanceState = nil
+        }
+        #else
+        performanceState = nil
+        #endif
+
+        widgets.forEach { [self] (w: SWidget) in
             switch w.item {
             case let widget as Mini: widget.setValue(value.totalUsage)
             case let widget as LineChart:
@@ -232,9 +254,9 @@ public class CPU: Module {
                 // cluster stands as tall as the cores in it are busy
                 let clusters: [ColorValue] = self.clusterShares(value)
                 if widget.colorState == .cluster, !clusters.isEmpty {
-                    widget.setValues(clusters)
+                    widget.setValues(clusters, performanceState: performanceState)
                 } else {
-                    widget.setValue(value.totalUsage)
+                    widget.setValue(value.totalUsage, performanceState: performanceState)
                 }
             case let widget as BarChart:
                 var val: [[ColorValue]] = [[ColorValue(value.totalUsage)]]
@@ -277,7 +299,7 @@ public class CPU: Module {
                         val = widget.colorState == .cluster ? clusters : clustersPlain
                     }
                 }
-                widget.setValue(val)
+                widget.setValue(val, performanceState: performanceState)
             case let widget as PieChart:
                 widget.setValue([
                     ColorValue(value.systemLoad, color: self.systemColor),

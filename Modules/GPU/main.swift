@@ -114,6 +114,10 @@ public class GPU: Module {
     private let previewView: Preview
     
     private var infoReader: InfoReader? = nil
+
+    #if arch(arm64)
+    private let performanceStateReader = PerformanceStateReader(group: "GPU Stats") { $0 == "GPUPH" }
+    #endif
     
     private var selectedGPU: String = ""
     
@@ -180,13 +184,27 @@ public class GPU: Module {
         self.notificationsView.usageCallback(utilization)
         self.previewView.loadCallback(selectedGPU)
         
-        self.menuBar.widgets.filter{ $0.isActive }.forEach { (w: SWidget) in
+        let widgets = self.menuBar.widgets.filter { $0.isActive }
+        let performanceState: Double?
+        #if arch(arm64)
+        if selectedGPU.IOClass.lowercased().contains("agx"),
+           widgets.contains(where: { $0.item is LineChart || $0.item is BarChart }) {
+            performanceState = self.performanceStateReader?.read(interval: self.infoReader?.interval ?? 1)
+        } else {
+            self.performanceStateReader?.reset()
+            performanceState = nil
+        }
+        #else
+        performanceState = nil
+        #endif
+
+        widgets.forEach { (w: SWidget) in
             switch w.item {
             case let widget as Mini:
                 widget.setValue(utilization)
                 widget.setTitle(self.showType ? "\(selectedGPU.type)GPU" : nil)
-            case let widget as LineChart: widget.setValue(utilization)
-            case let widget as BarChart: widget.setValue([[ColorValue(utilization)]])
+            case let widget as LineChart: widget.setValue(utilization, performanceState: performanceState)
+            case let widget as BarChart: widget.setValue([[ColorValue(utilization)]], performanceState: performanceState)
             case let widget as Tachometer:
                 widget.setValue([
                     ColorValue(utilization, color: NSColor.systemBlue)
